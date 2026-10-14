@@ -27,6 +27,7 @@ import {
   cinematicDuration,
   type CinematicKind,
 } from "./lib/cinematics";
+import { useFreeModels } from "./lib/useFreeModels";
 import { useSpeech } from "./lib/useSpeech";
 import {
   defaultPreferences,
@@ -52,6 +53,7 @@ const welcome = (character: Character): Message => ({
   time: time(),
 });
 export default function App() {
+  const modelCatalog = useFreeModels();
   const [character, setCharacter] = useState(characters[0]);
   const [messages, setMessages] = useState<Message[]>(() => [
     welcome(characters[0]),
@@ -69,6 +71,7 @@ export default function App() {
     widget: false,
     key: "",
     model: DEFAULT_MODEL,
+    autoFallback: true,
     voice: "",
     rate: 1,
     ttsProvider: localVoiceAvailable ? "local" : "system",
@@ -382,10 +385,13 @@ export default function App() {
           history,
           signal: controller.signal,
           away: awayRef.current > Date.now(),
-          onRetry: () => {
-            if (id === requestId.current)
+          models: modelCatalog.models,
+          onAttempt: (attempt) => {
+            if (id !== requestId.current) return;
+            if (attempt.done) setToast(`Ответила: ${attempt.model}`);
+            else
               setBubble(
-                "Модель промолчала. Один повтор — без платного маршрута…",
+                `${attempt.reason ? attempt.reason + "\n" : ""}Пробую ${attempt.model} (${attempt.index}/${attempt.total})…`,
               );
           },
         });
@@ -764,6 +770,7 @@ export default function App() {
             }}
             voices={voices}
             localVoiceState={voiceState}
+            modelCatalog={modelCatalog}
             onPreview={(kind) => {
               setModal(null);
               setBubble(

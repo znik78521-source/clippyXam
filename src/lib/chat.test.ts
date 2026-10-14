@@ -76,9 +76,12 @@ test("API sends credentials only to OpenRouter, bounds history and soft gestures
     max_price: { prompt: 0, completion: 0 },
   });
   assert.equal(payload.max_tokens, 400);
-  assert.equal(payload.messages.length, 21);
+  assert.equal(payload.messages.length, 2);
   assert.equal(payload.messages[0].role, "system");
-  assert.equal(payload.messages[1].content, "20");
+  assert.equal(
+    payload.messages[1].content,
+    Array.from({ length: 20 }, (_, i) => String(i + 20)).join("\n"),
+  );
   assert.equal(result.mood, "speaking");
 });
 test("API rejects unauthorized and empty responses with useful errors", async (t) => {
@@ -127,7 +130,7 @@ test("API preserves abort signal for cancellation", async (t) => {
 });
 
 test("only zero-cost routes are accepted and paid IDs fail before fetch", async (t) => {
-  assert.equal(DEFAULT_MODEL, "liquid/lfm-2.5-2.6b:free");
+  assert.equal(DEFAULT_MODEL, "openrouter/free");
   for (const id of [DEFAULT_MODEL, "vendor/mini:free"])
     assert.equal(isFreeModel(id), true);
   for (const id of [
@@ -187,7 +190,7 @@ test("never prints truncated JSON or hidden reasoning in the balloon", () => {
   });
   assert.equal(parseReply("Реплика. [[mood=offend").text, "Реплика.");
 });
-test("empty response repeats exactly once on same free model with reasoning disabled", async (t) => {
+test("empty response moves to a different free model without forced optional parameters", async (t) => {
   let calls = 0;
   const bodies: any[] = [];
   t.mock.method(globalThis, "fetch", async (_url, init) => {
@@ -214,14 +217,16 @@ test("empty response repeats exactly once on same free model with reasoning disa
   assert.equal(reply.text, "Ну что, опять ты?");
   assert.equal(calls, 2);
   assert.equal(retries, 1);
+  assert.notEqual(bodies[0].model, bodies[1].model);
   for (const b of bodies) {
-    assert.equal(b.model, DEFAULT_MODEL);
-    assert.equal(b.reasoning.enabled, false);
+    assert.equal(isFreeModel(b.model), true);
+    assert.equal(b.reasoning, undefined);
+    assert.equal(b.temperature, undefined);
     assert.match(b.messages[0].content, /НЕЙРОХАМ/);
     assert.match(b.messages[0].content, /НЕ JSON/);
   }
 });
-test("abort during empty-response retry prevents a second request; 429 not retried", async (t) => {
+test("abort during fallback prevents another request; 429 fallback is bounded", async (t) => {
   const controller = new AbortController();
   let calls = 0;
   const fetchMock = t.mock.method(globalThis, "fetch", async () => {
@@ -247,7 +252,7 @@ test("abort during empty-response retry prevents a second request; 429 not retri
     () => requestReply({ ...opts, signal: new AbortController().signal }),
     /Лимит/,
   );
-  assert.equal(calls, 2);
+  assert.equal(calls, 5);
 });
 test("mixed Cyrillic and Chinese output is retried and never displayed", async (t) => {
   let calls = 0;

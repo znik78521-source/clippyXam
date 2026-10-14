@@ -21,6 +21,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+      - run: npx playwright install chromium
+      - run: npm run test:e2e -- --workers=2
       - run: npm run portable:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -57,15 +59,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = 'v0.5.0-portable'
+          $tag = 'v0.6.0-portable'
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $sha = (Get-ChildItem release/*.exe.sha256).FullName
           $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           $notes = @"
           ## Portable для Windows 10/11 x64 — без установщика
-          Скачайте **clippyXam-0.5.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+          Скачайте **clippyXam-0.6.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
 
-          Исправлены пустые/обрезанные ответы и JSON в облачке; ответы с иероглифами повторяются один раз вместо показа мусора. Неотправленное сообщение остаётся в поле, новый черновик не затирается. По умолчанию Liquid LFM2.5-2.6B :free, отключено рассуждение, один повтор при пустом ответе. Хамский режим по умолчанию; отдельная анимация выглядывания и жеста. Добавлены бита/трещины, закапывание, решётка/пиксельное рассыпание, огнемёт, прыжки со звёздочками и три фальшивые системные сценки. Все эффекты только внутри окна — никаких действий с Windows или файлами. Просмотр: Настройки → Поведение → Просмотр мемной сценки.
+          Новый раскрываемый список бесплатных моделей: компактные первыми, остальные в резерве; обновление из публичного каталога без передачи ключа. Автовыбор по умолчанию. Выбранная вручную модель пробуется первой. При HTTP 400/404/408/429/5xx, сетевом сбое, пустом ответе или иероглифах — другая бесплатная модель (до 4 ID, до 9 секунд на каждую). При 401/402/403 перебор прекращается; его можно отключить. Убраны принудительные reasoning/temperature, нормализованы роли истории; после 400 следующий запрос получает совместимый формат. Только free-маршруты с нулевыми ценовыми ограничениями, платного fallback нет.
+
+          Скорость не гарантируется: компактность — ориентир, не замер. Попытки расходуют бесплатную квоту, общий лимит аккаунта смена модели не обходит. Текст может попасть нескольким провайдерам с разными правилами хранения. Живые запросы с пользовательским ключом не проверялись, точная причина его 400 не подтверждена. Неуспешное сообщение остаётся в поле, новые правки не затираются. Восемь визуальных мемных сценок и NT-рамка сохранены.
 
           Встроенная русская озвучка Piper/Denis включена по умолчанию: автоматически скачивает 63 МБ с Hugging Face при первом запуске, далее работает локально без голосов Windows/ключей/платных API. Для первого скачивания нужен интернет. Голос сохраняется в clippyXam-data/voices. Возможен повтор загрузки в настройках. Это озвучка ответа, а не распознавание микрофона.
 
@@ -82,11 +86,8 @@ jobs:
           $notes | Set-Content -Encoding utf8 release/release-notes.md
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.5.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.6.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
-      - run: npx playwright install chromium
-      - run: npm run test:e2e -- --workers=2
-        continue-on-error: true
       - name: Packaged application smoke
         continue-on-error: true
         timeout-minutes: 4

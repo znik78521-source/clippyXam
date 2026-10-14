@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+test.beforeEach(async ({ page }) => {
+  await page.route("https://openrouter.ai/api/v1/models", (route) =>
+    route.abort(),
+  );
+});
 const endpoint = "https://openrouter.ai/api/v1/chat/completions";
 async function connect(page: Page) {
   await page.goto("/");
@@ -83,7 +88,7 @@ test("Enter submits exactly once to free route with zero-price limits and no lea
   await expect(page.locator(".nt-balloon")).toContainText("Ответ модели");
   expect(calls).toBe(1);
 });
-test("token removal and 401 force onboarding; paid models are refused in settings", async ({
+test("token removal and 401 force onboarding; dropdown contains only free routes", async ({
   page,
 }) => {
   await page.route(endpoint, (route) =>
@@ -91,10 +96,14 @@ test("token removal and 401 force onboarding; paid models are refused in setting
   );
   await connect(page);
   await settings(page);
-  await page.getByLabel("ID модели").fill("paid/model");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText(":free");
-  await page.getByLabel("ID модели").fill("openrouter/free");
+  const options = await page
+    .locator("#model option")
+    .evaluateAll((nodes) => nodes.map((n) => (n as HTMLOptionElement).value));
+  expect(options.length).toBeGreaterThan(2);
+  expect(
+    options.every((id) => id === "openrouter/free" || id.endsWith(":free")),
+  ).toBe(true);
+  await page.getByLabel("Бесплатная модель").selectOption("openrouter/free");
   await page.getByRole("button", { name: "Применить", exact: true }).click();
   await send(page, "Тест");
   await expect(
@@ -303,12 +312,16 @@ test("small viewport keeps token flow and minimal input accessible", async ({
     page.getByRole("button", { name: "Применить", exact: true }),
   ).toBeVisible();
 });
-test("429 is explicit, never retries or falls back to a paid model", async ({
+test("429 is explicit, retries at most four different free routes", async ({
   page,
 }) => {
   let calls = 0;
+  const models: string[] = [];
   await page.route(endpoint, (route) => {
     calls++;
+    const body = route.request().postDataJSON();
+    models.push(body.model);
+    expect(body.provider.max_price).toEqual({ prompt: 0, completion: 0 });
     return route.fulfill({ status: 429, json: {} });
   });
   await connect(page);
@@ -317,7 +330,11 @@ test("429 is explicit, never retries or falls back to a paid model", async ({
     "Лимит бесплатных запросов",
   );
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(calls).toBe(1);
+  expect(calls).toBe(4);
+  expect(new Set(models).size).toBe(4);
+  expect(
+    models.every((id) => id === "openrouter/free" || id.endsWith(":free")),
+  ).toBe(true);
 });
 test("system voice can be enabled and stopped without enabling paid TTS", async ({
   page,
@@ -452,7 +469,7 @@ test("failed send keeps original text; successful retry clears it and does not d
   await page.route(endpoint, (route) => {
     calls++;
     messages = route.request().postDataJSON().messages;
-    return calls === 1
+    return calls <= 4
       ? route.fulfill({ status: 503, json: {} })
       : route.fulfill({ json: response("Получилось") });
   });
@@ -528,4 +545,104 @@ test("all eight visual gags can be previewed without network or OS commands", as
   await expect(page.locator(".fake-system")).toContainText(
     "WINDOWS НЕ ЗАТРОНУТА",
   );
+});
+test("live model dropdown excludes paid models and selected HTTP400 falls back without losing draft", async ({
+  page,
+}) => {
+  await page.route("https://openrouter.ai/api/v1/models", (route) => {
+    expect(route.request().headers().authorization).toBeUndefined();
+    return route.fulfill({
+      json: {
+        data: [
+          {
+            id: "test/fast-4b:free",
+            name: "Компактная тестовая",
+            pricing: { prompt: "0", completion: "0" },
+            architecture: {
+              input_modalities: ["text"],
+              output_modalities: ["text"],
+            },
+          },
+          {
+            id: "test/reserve-70b:free",
+            name: "Резервная тестовая",
+            pricing: { prompt: "0", completion: "0" },
+            architecture: {
+              input_modalities: ["text"],
+              output_modalities: ["text"],
+            },
+          },
+          {
+            id: "paid/model:free",
+            name: "Платная",
+            pricing: { prompt: "1", completion: "1" },
+            architecture: {
+              input_modalities: ["text"],
+              output_modalities: ["text"],
+            },
+          },
+        ],
+      },
+    });
+  });
+  const bodies: any[] = [];
+  await page.route(endpoint, (route) => {
+    bodies.push(route.request().postDataJSON());
+    return bodies.length === 1
+      ? route.fulfill({
+          status: 400,
+          json: { error: { message: "unsupported reasoning" } },
+        })
+      : route.fulfill({ json: response("Сработал резерв") });
+  });
+  await connect(page);
+  await settings(page);
+  await expect(
+    page.locator('#model option[value="test/reserve-70b:free"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('#model option[value="paid/model:free"]'),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Бесплатная модель")
+    .selectOption("test/reserve-70b:free");
+  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await send(page, "Вопрос для резерва");
+  await expect(page.locator(".nt-balloon")).toContainText("Сработал резерв");
+  expect(bodies.map((b) => b.model)).toEqual([
+    "test/reserve-70b:free",
+    "test/fast-4b:free",
+  ]);
+  expect(bodies[1].messages.every((m: any) => m.role !== "system")).toBe(true);
+  expect(bodies[1].provider.max_price).toEqual({ prompt: 0, completion: 0 });
+  await expect(
+    page.getByRole("textbox", { name: "Сообщение маскоту" }),
+  ).toHaveValue("");
+});
+test("fallback can be disabled; catalog failure retains bootstrap choices", async ({
+  page,
+}) => {
+  let calls = 0;
+  await page.route(endpoint, (route) => {
+    calls++;
+    return route.fulfill({ status: 503, json: {} });
+  });
+  await connect(page);
+  await settings(page);
+  await expect(
+    page.getByText("Не удалось обновить каталог.", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Бесплатная модель")
+    .selectOption("liquid/lfm-2.5-2.6b:free");
+  await page
+    .getByLabel("Если не отвечает — пробовать другую бесплатную модель")
+    .uncheck();
+  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await send(page, "Сохрани черновик");
+  await expect(page.getByRole("alert")).toBeVisible();
+  expect(calls).toBe(1);
+  await expect(
+    page.getByRole("textbox", { name: "Сообщение маскоту" }),
+  ).toHaveValue("Сохрани черновик");
 });

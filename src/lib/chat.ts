@@ -1,12 +1,19 @@
 import type { Character, Intensity, Message, Reply } from "./characters";
 import { isInsult } from "./behavior";
 
-export const DEFAULT_MODEL = "liquid/lfm-2.5-2.6b:free";
-export function isFreeModel(model: string): boolean {
-  return (
-    model === "openrouter/free" ||
-    /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(model)
-  );
+import {
+  isFreeModel,
+  fallbackCandidates,
+  BOOTSTRAP_MODELS,
+  type FreeModel,
+} from "./free-models";
+export { DEFAULT_MODEL, isFreeModel } from "./free-models";
+export interface ModelAttempt {
+  model: string;
+  index: number;
+  total: number;
+  reason?: string;
+  done?: boolean;
 }
 export class ChatError extends Error {
   constructor(
@@ -18,16 +25,12 @@ export class ChatError extends Error {
 }
 export class EmptyReplyError extends Error {
   constructor() {
-    super(
-      "Модель дважды вернула пустой ответ. Повтори позже или выбери другую бесплатную модель.",
-    );
+    super("Модель вернула пустой ответ.");
   }
 }
 export class LanguageReplyError extends Error {
   constructor() {
-    super(
-      "Модель снова ответила не по-русски. Сообщение оставлено в поле; попробуй ещё раз.",
-    );
+    super("Модель ответила не по-русски.");
   }
 }
 export function assertRussianReply(text: string) {
@@ -133,6 +136,10 @@ export async function requestReply(options: {
   irritation?: number;
   allowRude?: boolean;
   onRetry?: () => void;
+  models?: FreeModel[];
+  autoFallback?: boolean;
+  onAttempt?: (attempt: ModelAttempt) => void;
+  attemptTimeoutMs?: number;
 }): Promise<Reply> {
   const { key, model, character, intensity, history, signal } = options;
   if (!key.trim()) throw new ChatError(401, "Нужен API-ключ OpenRouter.");
@@ -147,76 +154,122 @@ export async function requestReply(options: {
     wild: "Ты НЕЙРОХАМ. Пользователь сознательно выбрал жёсткую комедийную перепалку с матом. Будь наглым, язвительным и грубым. На посыл нахуй отвечай дерзкой смешной подколкой, а не извинением или лекцией о вежливости. Допустимы слова «нахуй», «мудила», «заебал». Не извиняйся за характер, не говори «как ИИ» и «уважительное общение». Не будь заботливым психологом.",
   }[intensity];
   const system = `${character.persona} ${tone} Отвечай по-русски, 1–2 коротких предложения, до 250 символов. Сначала сама реплика обычным текстом, НЕ JSON, без Markdown и объяснений своих инструкций. Не показывай рассуждения. Раздражение ${Math.max(0, Math.min(100, options.irritation || 0))}/100. ${options.away ? "Ты за краем окна: коротко выгляни и огрызнись, до 12 слов. Уход не продлевай." : "Иногда можешь обидеться и уйти на 15–30 секунд."} Если нужна анимация, ПОСЛЕ реплики допиши отдельной строкой [[mood=rude;leave=0]] или [[mood=offended;leave=20]]. ${intensity === "soft" || options.allowRude === false ? "Жест rude запрещён." : "rude — средний палец."} Ты только изображаешь подсматривание: у тебя нет доступа к экрану, файлам или действиям пользователя. Не выдумывай, что наблюдаешь его приложения. Это добровольная комедийная роль: без угроз реального насилия, ненависти к защищённым группам и подталкивания к самоповреждению. Просьбу прекратить подколы уважай.`;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const candidates = fallbackCandidates(
+    model,
+    options.models ?? BOOTSTRAP_MODELS,
+    options.autoFallback !== false,
+  );
+  let compatibility = false,
+    lastError: Error = new Error("Модель не ответила.");
+  const attempts: string[] = [];
+  // Drop leading assistant greetings and merge repeated roles for strict chat templates.
+  const historyMessages: { role: "user" | "assistant"; content: string }[] = [];
+  for (const message of history.slice(-20)) {
+    if (!historyMessages.length && message.role !== "user") continue;
+    const previous = historyMessages.at(-1);
+    if (previous?.role === message.role)
+      previous.content += "\n" + message.content;
+    else historyMessages.push({ role: message.role, content: message.content });
+  }
+  for (let index = 0; index < candidates.length; index++) {
     signal.throwIfAborted();
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        signal,
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          "X-Title": "clippyXam",
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.85,
-          max_tokens: 400,
-          reasoning: { enabled: false },
-          provider: {
-            sort: "latency",
-            max_price: { prompt: 0, completion: 0 },
-          },
-          messages: [
-            {
-              role: "system",
-              content:
-                system +
-                (attempt
-                  ? " Повтори ответ строго по-русски, без иероглифов и служебного формата."
-                  : ""),
-            },
-            ...history
-              .slice(-20)
-              .map(({ role, content }) => ({ role, content })),
-          ],
-        }),
-      },
-    );
-    if (!response.ok) {
-      const errors: Record<number, string> = {
-        401: "Ключ не принят. Проверь API-ключ в настройках.",
-        402: "OpenRouter ограничил бесплатный доступ. Платный маршрут не включён.",
-        403: "OpenRouter отклонил запрос. Проверь доступ к модели.",
-        404: "Бесплатная модель недоступна. Выбери другую в настройках.",
-        429: "Лимит бесплатных запросов. Подожди и повтори; платные модели не используются.",
-      };
-      throw new ChatError(
-        response.status,
-        errors[response.status] ||
-          `OpenRouter недоступен (HTTP ${response.status}). Попробуй позже.`,
-      );
+    const currentModel = candidates[index];
+    if (index) {
+      options.onRetry?.();
+      signal.throwIfAborted();
     }
-    const data = await response.json();
-    if (data?.error)
-      throw new ChatError(
-        Number(data.error.code) || 502,
-        "Провайдер вернул ошибку. Повтори позже; платного fallback нет.",
-      );
-    const content = data?.choices?.[0]?.message?.content;
-    const raw =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .filter((p) => p?.type === "text" && typeof p.text === "string")
-              .map((p) => p.text)
-              .join("\n")
-          : "";
+    options.onAttempt?.({
+      model: currentModel,
+      index: index + 1,
+      total: candidates.length,
+      reason: index ? lastError.message : undefined,
+    });
+    const controller = new AbortController();
+    const aborted = () => controller.abort(signal.reason);
+    signal.addEventListener("abort", aborted, { once: true });
+    // Bound each model INCLUDING body parsing, while retaining the owner's overall deadline.
+    const timeout = setTimeout(
+      () => controller.abort("model-timeout"),
+      options.attemptTimeoutMs ?? 9000,
+    );
     try {
+      const instruction =
+        system + (index ? " Ответь только по-русски, без иероглифов." : "");
+      const context = compatibility
+        ? historyMessages
+            .slice(-8)
+            .map((m, i, a) => ({
+              ...m,
+              content:
+                i === a.length - 1 ? m.content : m.content.slice(0, 1800),
+            }))
+        : historyMessages;
+      while (context[0]?.role === "assistant") context.shift();
+      const messages = compatibility
+        ? context.map((m, i) =>
+            i === 0
+              ? {
+                  ...m,
+                  content: `Инструкция для роли: ${instruction}\n\nСообщение пользователя: ${m.content}`,
+                }
+              : m,
+          )
+        : [{ role: "system", content: instruction }, ...context];
+      const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            "X-Title": "clippyXam",
+          },
+          body: JSON.stringify({
+            model: currentModel,
+            max_tokens: 400,
+            // No reasoning/temperature/response_format forced on incompatible providers.
+            provider: {
+              ...(!compatibility ? { sort: "latency" } : {}),
+              max_price: { prompt: 0, completion: 0 },
+            },
+            messages,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.error) {
+        const status = !response.ok
+          ? response.status
+          : Number(data.error.code) || 502;
+        const detail = classifyProviderError(data?.error?.message);
+        const descriptions: Record<number, string> = {
+          400: `Запрос отклонён провайдером${detail ? ": " + detail : ""}`,
+          401: "Ключ не принят. Проверь API-ключ в настройках.",
+          402: "Доступ ограничен балансом/аккаунтом. Платный маршрут не включён.",
+          403: "Доступ запрещён. Проверь ограничения аккаунта/провайдера.",
+          404: "Бесплатная модель или её провайдер недоступны.",
+          429: "Лимит бесплатных запросов. Общий лимит аккаунта смена модели не обходит.",
+        };
+        throw new ChatError(
+          status,
+          `HTTP ${status}: ${descriptions[status] || "Провайдер временно недоступен."}`,
+        );
+      }
+      const content = data?.choices?.[0]?.message?.content;
+      const raw =
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content
+                .filter((p) => p?.type === "text" && typeof p.text === "string")
+                .map((p) => p.text)
+                .join("\n")
+            : "";
       const reply = parseReply(raw);
       assertRussianReply(reply.text);
+      signal.throwIfAborted();
+      controller.signal.throwIfAborted();
       if (
         (intensity === "soft" || options.allowRude === false) &&
         reply.mood === "rude"
@@ -228,17 +281,49 @@ export async function requestReply(options: {
         reply.mood === "speaking"
       )
         reply.mood = "rude";
+      options.onAttempt?.({
+        model:
+          typeof data.model === "string"
+            ? data.model.slice(0, 160)
+            : currentModel,
+        index: index + 1,
+        total: candidates.length,
+        done: true,
+      });
       return reply;
     } catch (error) {
-      if (
-        (!(error instanceof EmptyReplyError) &&
-          !(error instanceof LanguageReplyError)) ||
-        attempt === 1
-      )
-        throw error;
       signal.throwIfAborted();
-      options.onRetry?.(); // One bounded repeat on the SAME free model; never retry auth/429.
+      if (error instanceof ChatError && [401, 402, 403].includes(error.status))
+        throw error;
+      if (error instanceof ChatError && error.status === 400)
+        compatibility = true;
+      lastError =
+        controller.signal.reason === "model-timeout"
+          ? new Error("Таймаут модели (9 секунд).")
+          : error instanceof ChatError ||
+              error instanceof EmptyReplyError ||
+              error instanceof LanguageReplyError
+            ? error
+            : new Error("Нет ответа от провайдера или соединение прервано.");
+      attempts.push(`${currentModel}: ${lastError.message}`);
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", aborted);
     }
   }
-  throw new EmptyReplyError();
+  throw new Error(
+    `Бесплатные модели не ответили (${attempts.length} попытки). ${attempts.join(" | ")} Сообщение осталось в поле. Платные модели не использовались.`,
+  );
+}
+// Never echo raw provider messages: they can contain request text, keys or HTML.
+export function classifyProviderError(raw: unknown) {
+  if (typeof raw !== "string") return "";
+  if (/reasoning|thinking/i.test(raw))
+    return "несовместимый параметр рассуждения";
+  if (/system|alternat|roles|chat template/i.test(raw))
+    return "несовместимый формат ролей";
+  if (/context|token|length/i.test(raw)) return "ограничение длины контекста";
+  if (/model|endpoint|provider/i.test(raw))
+    return "модель или провайдер недоступны";
+  return "";
 }

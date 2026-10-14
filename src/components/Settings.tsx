@@ -7,6 +7,7 @@ import {
   type CinematicKind,
 } from "../lib/cinematics";
 import { characters } from "../lib/characters";
+import type { useFreeModels } from "../lib/useFreeModels";
 import { DEFAULT_MODEL, isFreeModel } from "../lib/chat";
 import type { CharacterId, Intensity } from "../lib/characters";
 import type { CompanionPreferences } from "../lib/preferences";
@@ -17,6 +18,7 @@ export interface SettingsData {
   widget: boolean;
   key: string;
   model: string;
+  autoFallback: boolean;
   voice: string;
   rate: number;
   ttsProvider: "system" | "openai" | "local";
@@ -30,10 +32,12 @@ export default function Settings({
   voices,
   onSave,
   onClose,
+  modelCatalog,
   localVoiceState,
   onPreview,
 }: {
   settings: SettingsData;
+  modelCatalog: ReturnType<typeof useFreeModels>;
   voices: SpeechSynthesisVoice[];
   localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
   onPreview?: (kind: CinematicKind) => void;
@@ -223,22 +227,76 @@ export default function Settings({
             нужно.
           </p>
           <label className="field-label" htmlFor="model">
-            ID модели
+            Бесплатная модель
           </label>
-          <input
+          <select
             id="model"
             value={draft.model}
             onChange={(event) =>
               setDraft({ ...draft, model: event.target.value })
             }
-            placeholder={DEFAULT_MODEL}
-            spellCheck={false}
-          />
+          >
+            <option value={DEFAULT_MODEL}>
+              Автовыбор: компактные → резерв → free router
+            </option>
+            {!modelCatalog.models.some((m) => m.id === draft.model) &&
+              draft.model !== DEFAULT_MODEL && (
+                <option value={draft.model}>
+                  {draft.model} — нет в текущем каталоге
+                </option>
+              )}
+            <optgroup label="Компактные — приоритет скорости">
+              {modelCatalog.models
+                .filter((m) => m.group === "fast")
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+            </optgroup>
+            <optgroup label="Другие бесплатные — резерв">
+              {modelCatalog.models
+                .filter((m) => m.group === "reserve")
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+            </optgroup>
+          </select>
+          <button
+            type="button"
+            disabled={modelCatalog.loading}
+            onClick={() => void modelCatalog.refresh()}
+          >
+            {modelCatalog.loading
+              ? "Обновляю список…"
+              : "Обновить список моделей"}
+          </button>
+          <p className="field-help" role="status">
+            {modelCatalog.error ||
+              (modelCatalog.live
+                ? `Бесплатных текстовых моделей в каталоге: ${modelCatalog.models.length}.`
+                : "Встроенный список до обновления каталога.")}{" "}
+            Компактность — ориентир, не замер скорости. Доступность и очереди
+            меняются.
+          </p>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.autoFallback}
+              onChange={(event) =>
+                setDraft({ ...draft, autoFallback: event.target.checked })
+              }
+            />
+            Если не отвечает — пробовать другую бесплатную модель
+          </label>
           <p className="field-help">
-            По умолчанию openrouter/free — автоматический выбор бесплатной
-            модели. Можно указать другой ID с :free. Приоритет низкой задержки,
-            но скорость и доступность не гарантируются. Есть лимиты сервиса.
-            Платного fallback нет.
+            До четырёх разных моделей, до 9 секунд на каждую. При HTTP 400
+            следующая получает упрощённый совместимый запрос. Ключ/аккаунт
+            (401/402/403) не перебираются. Каждый запрос расходует бесплатный
+            лимит; платного fallback нет. Текст может попасть к нескольким
+            провайдерам с разными правилами хранения.
           </p>
         </fieldset>
         <fieldset

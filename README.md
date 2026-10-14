@@ -51,4 +51,4 @@ npm run test:e2e
 npm run portable:win          # Windows: готовит Piper, собирает portable
 ```
 
-`npm run verify` — типы, логика, mock-контроллеры и аудит спрайтов. Windows CI дополнительно синтезирует настоящий русский WAV, запускает packaged-приложение и сам portable. [TEST-REPORT.md](docs/TEST-REPORT.md), [WINDOWS-QA.md](docs/WINDOWS-QA.md). Проверки в runner не заменяют прослушивание, реальный микрофон, GPU/DPI и мониторы пользователя. Старые 0.1/0.2 ZIP — исторические исходники, не новые exe.
+`npm run verify` — типы, логика, mock-контроллеры и аудит спрайтов. Windows CI дополнительно синтезирует настоящий русский WAV, запускает packaged-приложение и сам portable. [TEST-REPORT.md](docs/TEST-REPORT.md), [WINDOWS-QA.md](docs/WINDOWS-QA.md). Проверки в runner не заменяют прослушивание, реальный микрофон, GPU/DPI и мониторы пользователя. Устаревшие исходные ZIP удалены из рабочей ветки. Готовые бинарники — только в GitHub Releases.

@@ -8,7 +8,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 TOP = (
-    '.gitignore', 'README.md', 'START-HERE-RU.md', 'THIRD_PARTY_NOTICES.md',
+    '.gitignore', 'README.md', 'START-HERE-RU.md', 'PORTABLE-RU.md', 'THIRD_PARTY_NOTICES.md',
     'START-WINDOWS.cmd', 'CHECK-WINDOWS.cmd', 'package.json', 'package-lock.json',
     'index.html', 'tsconfig.json', 'vite.config.ts', 'playwright.config.ts',
 )

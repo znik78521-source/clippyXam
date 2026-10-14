@@ -2,6 +2,7 @@ name: Windows portable
 on:
   push:
     branches: [arena/f226a31f-clippyxam]
+    paths-ignore: ["**/*.md", "scripts/source-archive.py"]
   workflow_dispatch:
 concurrency:
   group: windows-portable-${{ github.ref }}
@@ -27,6 +28,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Packaged application smoke
         timeout-minutes: 4
+        env:
+          DEBUG: pw:browser
         shell: pwsh
         run: |
           npm run test:packaged 2>&1 | Tee-Object -FilePath release/smoke.log
@@ -101,6 +104,14 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
           gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.3.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
+      - name: Report smoke failure diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path release/smoke.log) {
+            $detail = ((Get-Content release/smoke.log -Tail 100) -join "%0A")
+            Write-Output "::error title=Smoke diagnostic log::$detail"
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

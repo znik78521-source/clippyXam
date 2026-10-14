@@ -2,6 +2,16 @@
 import { _electron as electron, expect } from "@playwright/test";
 import path from "node:path";
 import fs from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+const deadline = setTimeout(() => {
+  console.error(
+    "Packaged smoke exceeded 120 seconds; terminating test processes.",
+  );
+  if (process.platform === "win32")
+    spawnSync("taskkill", ["/F", "/IM", "clippyXam.exe", "/T"]);
+  process.exit(1);
+}, 120000);
+deadline.unref();
 const executablePath = path.resolve(
   process.env.SMOKE_EXE || "release/win-unpacked/clippyXam.exe",
 );

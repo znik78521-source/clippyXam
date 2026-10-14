@@ -61,6 +61,9 @@ function createPointerController({
   schedule = (fn) => setInterval(fn, 50),
   cancel = clearInterval,
 }) {
+  // BrowserWindow.webContents is a native getter: accessing it after closed
+  // can throw "Object has been destroyed". Keep the emitter for cleanup.
+  const contents = window.webContents;
   const available = platform === "win32" || platform === "darwin";
   let enabled = false,
     disposed = false,
@@ -163,7 +166,7 @@ function createPointerController({
     disposed = true;
     disable();
     for (const [event, fn] of events) window.removeListener(event, fn);
-    window.webContents.removeListener("did-start-loading", reset);
+    contents.removeListener("did-start-loading", reset);
   }
   const reset = () => disable();
   const events = [
@@ -175,7 +178,7 @@ function createPointerController({
     ["minimize", reset],
   ];
   for (const [event, fn] of events) window.on(event, fn);
-  window.webContents.on("did-start-loading", reset);
+  contents.on("did-start-loading", reset);
   return { state, setEnabled, update, dispose };
 }
 module.exports = { sanitizeHitMap, hitsControls, createPointerController };

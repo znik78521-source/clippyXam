@@ -228,3 +228,20 @@ test("pointer preload exposes fixed channels, strips native events and removes s
     ["companion:pointer-state", "companion:set-pointer", "companion:hit-map"],
   );
 });
+test("closed window cleanup never accesses a destroyed BrowserWindow native getter", () => {
+  const window = new EventEmitter();
+  const contents = new EventEmitter();
+  let destroyed = false;
+  Object.defineProperty(window, "webContents", { get() {
+    if (destroyed) throw new Error("Object has been destroyed");
+    return contents;
+  }});
+  window.isDestroyed = () => destroyed;
+  window.setIgnoreMouseEvents = () => {};
+  const controller = createPointerController({window, getCursor:()=>({x:0,y:0})});
+  assert.equal(contents.listenerCount("did-start-loading"), 1);
+  destroyed = true;
+  assert.doesNotThrow(() => window.emit("closed"));
+  assert.equal(contents.listenerCount("did-start-loading"), 0);
+  assert.doesNotThrow(() => controller.dispose());
+});

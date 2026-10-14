@@ -12,6 +12,8 @@ const {
   net,
   session,
 } = require("electron");
+// Preserve the cause in CI/stderr before Electron opens its native error box.
+process.on("uncaughtExceptionMonitor", (error) => console.error("Main process failure:", error));
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
@@ -350,16 +352,17 @@ function createCompanionSurface() {
   surface.webContents.on("will-attach-webview", (event) =>
     event.preventDefault(),
   );
+  const surfaceContents = surface.webContents;
   for (const event of ["hide", "minimize"])
-    surface.on(event, () => dictation.stop(surface.webContents));
+    surface.on(event, () => dictation.stop(surfaceContents));
   pointerControllers.set(
     surface,
     createPointerController({
       window: surface,
       getCursor: () => screen.getCursorScreenPoint(),
       changed: (state) => {
-        if (!surface.isDestroyed())
-          surface.webContents.send("companion:pointer-state", state);
+        if (!surface.isDestroyed() && !surfaceContents.isDestroyed())
+          surfaceContents.send("companion:pointer-state", state);
       },
     }),
   );

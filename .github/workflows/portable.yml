@@ -3,8 +3,11 @@ on:
   push:
     branches: [arena/f226a31f-clippyxam]
   workflow_dispatch:
+concurrency:
+  group: windows-portable-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
-  contents: read
+  contents: write
 jobs:
   portable:
     runs-on: windows-latest
@@ -22,8 +25,16 @@ jobs:
       - run: npm run portable:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - run: npm run test:packaged
+      - name: Packaged application smoke
         timeout-minutes: 4
+        shell: pwsh
+        run: |
+          npm run test:packaged 2>&1 | Tee-Object -FilePath release/smoke.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/smoke.log -Tail 60) -join "%0A")
+            Write-Output "::error title=Packaged smoke::$detail"
+            exit 1
+          }
       - name: Check portable launcher
         timeout-minutes: 4
         shell: pwsh
@@ -31,8 +42,12 @@ jobs:
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $p = Start-Process $exe -ArgumentList '--remote-debugging-port=9333','--remote-debugging-address=127.0.0.1' -PassThru
           try {
-            node scripts/smoke-portable.mjs
-            if ($LASTEXITCODE -ne 0) { throw 'Portable launch smoke failed' }
+            node scripts/smoke-portable.mjs 2>&1 | Tee-Object -FilePath release/portable-smoke.log
+            if ($LASTEXITCODE -ne 0) {
+              $detail = ((Get-Content release/portable-smoke.log -Tail 60) -join "%0A")
+              Write-Output "::error title=Portable smoke::$detail"
+              throw 'Portable launch smoke failed'
+            }
             if (-not $p.WaitForExit(30000)) { throw 'Portable launcher did not exit' }
             if ($p.ExitCode -ne 0) { throw "Portable exit code: $($p.ExitCode)" }
           } finally {
@@ -56,11 +71,42 @@ jobs:
             release/THIRD_PARTY_NOTICES.md
           if-no-files-found: error
           retention-days: 30
+      - name: Publish tested portable prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = 'v0.3.0-portable'
+          $exe = (Get-ChildItem release/*-portable.exe).FullName
+          $sha = (Get-ChildItem release/*.exe.sha256).FullName
+          $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $notes = @"
+          ## Portable для Windows 10/11 x64 — без установщика
+          Скачайте **clippyXam-0.3.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+
+          Серый NT-интерфейс, Clippy/Rover/Merlin, бесплатный маршрут OpenRouter, настройки виджета, системная озвучка и экспериментальный голосовой ввод.
+
+          Рядом с exe создаётся clippyXam-data. Ключ OpenRouter вводится при запуске и хранится только в памяти. Бесплатные модели имеют лимиты; платного fallback нет. OpenAI TTS — отдельная явно платная опция.
+
+          **Без цифровой подписи:** возможны предупреждения SmartScreen. Не отключайте защиту вслепую. Для микрофона нужен совместимый ru-RU System.Speech recognizer; запасной путь — поле ввода и Win+H. Реальный микрофон/голоса, GPU/DPI и многомониторность на машине пользователя ещё требуют проверки.
+
+          Проверено на Windows runner: исходники, браузерные сценарии, запуск packaged-приложения, локальные ресурсы, onboarding, mocked OpenRouter, виджет/возврат и запуск самого portable exe. Живые API и микрофон не тестировались.
+
+          SHA-256: $digest
+          Commit: ${{ github.sha }}
+          Build: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          "@
+          $notes | Set-Content -Encoding utf8 release/release-notes.md
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.3.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-smoke-diagnostics
           path: |
             release/*.png
+            release/*smoke.log
             test-results/
           if-no-files-found: ignore

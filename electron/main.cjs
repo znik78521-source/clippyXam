@@ -11,6 +11,7 @@ const {
   protocol,
   net,
   session,
+  safeStorage,
 } = require("electron");
 // Preserve the cause in CI/stderr before Electron opens its native error box.
 process.on("uncaughtExceptionMonitor", (error) =>
@@ -59,7 +60,7 @@ const dictation = require("./dictation.cjs").createDictation();
 app.setName("clippyXam");
 if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam");
 
-let win, controller, tray, saveTimer, companion, localVoice;
+let win, controller, tray, saveTimer, companion, localVoice, keyVault;
 let companionSnapshot = null,
   companionBounds = null;
 let quitting = false;
@@ -218,6 +219,8 @@ function installIPC() {
       win.close();
     },
   };
+  handlers["key:load"] = () => keyVault.load();
+  handlers["key:save"] = (key) => keyVault.save(key);
   handlers["voice:state"] = () => localVoice.state();
   handlers["voice:prepare"] = () => localVoice.prepare();
   handlers["voice:stop"] = () => localVoice.stop(win.webContents);
@@ -556,6 +559,10 @@ else {
             }
           });
       }
+      keyVault = require("./key-vault.cjs").createKeyVault({
+        directory: app.getPath("userData"),
+        safeStorage,
+      });
       localVoice = require("./local-voice.cjs").createLocalVoice({
         baseDir: path.join(app.getPath("userData"), "voices", "denis-v1"),
         engineDir: app.isPackaged

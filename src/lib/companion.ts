@@ -3,6 +3,8 @@ import type { CharacterId, Mood } from "./characters";
 import type { WordRange } from "./speech-progress";
 export interface CompanionSnapshot {
   character: CharacterId;
+  cinematic?: { kind: import("./cinematics").CinematicKind; id: number } | null;
+  sendResult?: { sequence: number; success: boolean; text?: string };
   phase: Mood;
   animationMood: Mood;
   bubble: string;

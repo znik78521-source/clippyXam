@@ -22,6 +22,11 @@ import {
   nextIrritation,
 } from "./lib/behavior";
 
+import {
+  chooseCinematic,
+  cinematicDuration,
+  type CinematicKind,
+} from "./lib/cinematics";
 import { useSpeech } from "./lib/useSpeech";
 import {
   defaultPreferences,
@@ -72,6 +77,51 @@ export default function App() {
     cloudVoices: { ...defaultCloudVoices },
     companion: { ...defaultPreferences },
   });
+  const [keyLoaded, setKeyLoaded] = useState(
+    !window.clippyDesktop?.loadSavedKey,
+  );
+  useEffect(() => {
+    let active = true;
+    const bridge = window.clippyDesktop;
+    if (!bridge?.loadSavedKey) return;
+    void bridge
+      .loadSavedKey()
+      .then((result) => {
+        if (!active) return;
+        if (result.key)
+          setSettings((current) => ({ ...current, key: result.key }));
+        if (result.warning) setToast(result.warning);
+      })
+      .catch(() => {
+        if (active) setToast("Не удалось загрузить сохранённый ключ.");
+      })
+      .finally(() => {
+        if (active) setKeyLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  function persistKey(key: string) {
+    void window.clippyDesktop
+      ?.saveKey?.(key)
+      .catch((error) =>
+        setToast(
+          error instanceof Error ? error.message : "Ключ не удалось сохранить.",
+        ),
+      );
+  }
+  const [cinematic, setCinematic] = useState<{
+    kind: CinematicKind;
+    id: number;
+  } | null>(null);
+  const cinematicCounter = useRef(0),
+    lastCinematic = useRef(0);
+  const [sendResult, setSendResult] = useState<{
+    sequence: number;
+    success: boolean;
+    text?: string;
+  }>({ sequence: 0, success: false });
   const [modal, setModal] = useState<"settings" | null>(null);
   const resumeWidget = useRef(false);
   const [pending, setPending] = useState(false);
@@ -154,11 +204,26 @@ export default function App() {
     }
   }
   function clearTimers() {
+    setCinematic(null);
     timers.current.forEach(clearTimeout);
     timers.current = [];
   }
   function later(callback: () => void, delay: number) {
     timers.current.push(setTimeout(callback, delay));
+  }
+  function playCinematic(kind: CinematicKind) {
+    clearTimers();
+    lastCinematic.current = Date.now();
+    setCinematic({ kind, id: ++cinematicCounter.current });
+    const vanish = kind === "jail" || kind === "burrow";
+    if (vanish) {
+      setPhase("offended");
+      setAway(Date.now() + cinematicDuration[kind] + 9000);
+    }
+    later(() => {
+      setCinematic(null);
+      setPhase(awayRef.current > Date.now() ? "away" : "idle");
+    }, cinematicDuration[kind]);
   }
   function setAway(value: number) {
     awayRef.current = value;
@@ -282,9 +347,10 @@ export default function App() {
     setPending(true);
     stopSpeech();
     clearTimers();
+    const userMessageId = messageId();
     const history = [
       ...messages,
-      { id: messageId(), role: "user" as const, content, time: time() },
+      { id: userMessageId, role: "user" as const, content, time: time() },
     ].slice(-100);
     setMessages(history);
     setPhase(awayRef.current > Date.now() ? "peeking" : "thinking");
@@ -347,6 +413,24 @@ export default function App() {
           leaveSeconds: 0,
         };
       }
+      const scene = chooseCinematic({
+        text: content,
+        reply: reply.text,
+        previousReply:
+          [...messages]
+            .reverse()
+            .find((message) => message.role === "assistant")?.content || "",
+        intensity: effectiveIntensity,
+        allowRude: settings.companion.allowRude,
+        irritation: irritationRef.current,
+        quiet,
+        canRandom:
+          irritationRef.current >= 28 &&
+          Date.now() - lastCinematic.current > 15000 &&
+          !awayRef.current,
+      });
+      if (scene)
+        reply = { text: scene.text, mood: "speaking", leaveSeconds: 0 };
       setMessages((current) =>
         [
           ...current,
@@ -359,9 +443,16 @@ export default function App() {
         ].slice(-100),
       );
       applyReply(reply, isApology(content) || gentle);
+      if (scene) playCinematic(scene.kind);
+      setSendResult({ sequence: id, success: true });
     } catch (cause) {
       if (id !== requestId.current) return;
+      setSendResult({ sequence: id, success: false, text: content });
+      setMessages((current) =>
+        current.filter((message) => message.id !== userMessageId),
+      );
       if (cause instanceof ChatError && cause.status === 401) {
+        persistKey("");
         setSettings((current) => ({ ...current, key: "" }));
         setFloating(false);
         if (desktop.native) desktop.setCompanion(false);
@@ -496,6 +587,8 @@ export default function App() {
   const spokenRange = speech.progress?.text === bubble ? speech.progress : null;
   const companionSnapshot: CompanionSnapshot = {
     character: character.id,
+    sendResult,
+    cinematic,
     phase,
     animationMood,
     bubble,
@@ -600,6 +693,8 @@ export default function App() {
     speech.speaking,
     voiceState,
     settings.ttsProvider,
+    sendResult,
+    cinematic,
   ]);
 
   function saveSettings(value: SettingsData) {
@@ -612,6 +707,7 @@ export default function App() {
       newChat(next, value.companion.rememberSession);
     if (!value.companion.rememberSession) threads.current = {};
     setSettings(value);
+    persistKey(value.key);
     changeIntensity(value.intensity);
     setSound(value.sound);
     setPhase(awayRef.current > Date.now() ? "away" : "idle");
@@ -645,10 +741,11 @@ export default function App() {
           />
         </div>
       )}
-      {!minimized && !settings.key.trim() ? (
+      {keyLoaded && !minimized && !settings.key.trim() ? (
         <TokenDialog
           onSave={(key) => {
             setSettings((current) => ({ ...current, key }));
+            persistKey(key);
             setError("");
           }}
           onClose={closeWindow}
@@ -667,6 +764,13 @@ export default function App() {
             }}
             voices={voices}
             localVoiceState={voiceState}
+            onPreview={(kind) => {
+              setModal(null);
+              setBubble(
+                "Мемная сценка. Только пиксели — никаких действий с системой.",
+              );
+              playCinematic(kind);
+            }}
             onSave={saveSettings}
             onClose={() => {
               setModal(null);

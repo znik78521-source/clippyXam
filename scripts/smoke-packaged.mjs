@@ -55,6 +55,17 @@ try {
     .getByLabel("API-ключ OpenRouter")
     .fill("smoke-test-not-a-real-key");
   await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  expect(
+    await page.evaluate(
+      async () => (await window.clippyDesktop.loadSavedKey()).key,
+    ),
+  ).toBe("smoke-test-not-a-real-key");
+  const encrypted = await fs.readFile(
+    path.join(profile, "clippyXam-data", "openrouter-key.bin"),
+  );
+  expect(encrypted.includes(Buffer.from("smoke-test-not-a-real-key"))).toBe(
+    false,
+  );
   await expect(
     page.getByRole("img", { name: "clippy", exact: true }),
   ).toBeVisible();
@@ -133,6 +144,13 @@ try {
       app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
     )
     .toBe(1);
+  await page.reload();
+  await expect(
+    page.getByRole("img", { name: "clippy", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Подключение к OpenRouter" }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
   console.log(
     "Packaged Windows smoke passed: production scheme/assets, onboarding, mocked chat, widget/settings/restore, portable profile.",

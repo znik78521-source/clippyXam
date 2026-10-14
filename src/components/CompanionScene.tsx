@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Settings, Minus, X, Maximize2 } from "lucide-react";
 import Mascot from "./Mascot";
+import Cinematic from "./Cinematic";
 import PeekAnimation from "./PeekAnimation";
 import SpeechText from "./SpeechText";
 import { RudeHand } from "./Icons";
@@ -23,6 +24,7 @@ export function CompanionScene({
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const submittedRef = useRef<{ text: string; sequence: number } | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -37,11 +39,31 @@ export function CompanionScene({
       ),
     setError,
   );
+  const previousCharacter = useRef(snapshot.character);
   useEffect(() => {
     dictation.stop();
-    setText("");
+    if (previousCharacter.current !== snapshot.character) {
+      setText("");
+      submittedRef.current = null;
+    }
+    previousCharacter.current = snapshot.character;
     setError("");
   }, [snapshot.character]);
+  useEffect(() => {
+    const submitted = submittedRef.current,
+      result = snapshot.sendResult;
+    if (!result) return;
+    if (!submitted) {
+      if (!result.success && result.text)
+        setText((current) => current || result.text!);
+      return;
+    }
+    if (result.sequence <= submitted.sequence) return;
+    if (result.success)
+      setText((current) => (current === submitted.text ? "" : current));
+    else setText((current) => current || result.text || submitted.text);
+    submittedRef.current = null;
+  }, [snapshot.sendResult?.sequence, snapshot.sendResult?.success]);
   async function act(action: CompanionAction) {
     try {
       return await onAction(action);
@@ -113,6 +135,7 @@ export function CompanionScene({
       <div
         className={`nt-stage phase-${snapshot.phase}`}
         data-away={snapshot.away}
+        data-cinematic={snapshot.cinematic?.kind}
       >
         <div className="nt-balloon" data-companion-hit role="status">
           {snapshot.phase === "away" ? (
@@ -157,6 +180,12 @@ export function CompanionScene({
             )}
           </PeekAnimation>
         </div>
+        {snapshot.cinematic && (
+          <Cinematic
+            key={snapshot.cinematic.id}
+            kind={snapshot.cinematic.kind}
+          />
+        )}
       </div>
       <footer className="nt-composer" data-companion-hit>
         {(error || snapshot.error || snapshot.notice) && (
@@ -185,10 +214,13 @@ export function CompanionScene({
             setSending(true);
             setError("");
             const submitted = text;
+            submittedRef.current = {
+              text: submitted,
+              sequence: snapshot.sendResult?.sequence || 0,
+            };
             const ok = await act({ type: "send", text: submitted });
             if (alive.current) {
-              if (ok)
-                setText((current) => (current === submitted ? "" : current));
+              if (!ok) submittedRef.current = null;
               setSending(false);
             }
           }}

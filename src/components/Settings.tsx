@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
 import Dialog from "./Dialog";
+import {
+  cinematicNames,
+  cinematicLabel,
+  type CinematicKind,
+} from "../lib/cinematics";
 import { characters } from "../lib/characters";
 import { DEFAULT_MODEL, isFreeModel } from "../lib/chat";
 import type { CharacterId, Intensity } from "../lib/characters";
@@ -26,13 +31,16 @@ export default function Settings({
   onSave,
   onClose,
   localVoiceState,
+  onPreview,
 }: {
   settings: SettingsData;
   voices: SpeechSynthesisVoice[];
   localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
+  onPreview?: (kind: CinematicKind) => void;
   onSave: (data: SettingsData) => void;
   onClose: () => void;
 }) {
+  const [preview, setPreview] = useState<CinematicKind>("bat");
   const [draft, setDraft] = useState(settings);
   const [tab, setTab] = useState<"connection" | "voice" | "behavior">(
     "connection",
@@ -205,6 +213,15 @@ export default function Settings({
               openrouter.ai ↗
             </a>
           </div>
+          <button type="button" onClick={() => setDraft({ ...draft, key: "" })}>
+            Удалить сохранённый ключ при применении
+          </button>
+          <p className="field-help">
+            В Windows ключ сохраняется зашифрованным, привязан к твоей учётной
+            записи. После переноса portable на другой компьютер может
+            понадобиться повторный ввод. Новый ключ каждый раз создавать не
+            нужно.
+          </p>
           <label className="field-label" htmlFor="model">
             ID модели
           </label>
@@ -416,6 +433,28 @@ export default function Settings({
           hidden={tab !== "behavior"}
         >
           <legend>Характер и границы</legend>
+          <label className="field-label" htmlFor="cinematic-preview">
+            Просмотр мемной сценки
+          </label>
+          <select
+            id="cinematic-preview"
+            value={preview}
+            onChange={(event) =>
+              setPreview(event.target.value as CinematicKind)
+            }
+          >
+            {cinematicNames.map((kind) => (
+              <option key={kind} value={kind}>
+                {cinematicLabel[kind]}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => onPreview?.(preview)}>
+            Показать сценку
+          </button>
+          <p className="field-help">
+            Только анимации в окне. Файлы и Windows не затрагиваются.
+          </p>
           <label className="field-label" htmlFor="intensity">
             Характер
           </label>
@@ -544,9 +583,10 @@ export default function Settings({
         <div className="privacy-note">
           <ShieldCheck size={19} />
           <span>
-            Ключи — только в памяти: ключ чата отправляется OpenRouter, ключ
-            голоса — OpenAI (если выбран). История и кэш аудио не сохраняются
-            после перезагрузки.
+            Ключ OpenRouter в Windows сохраняется зашифрованным и отправляется
+            только OpenRouter. Ключ OpenAI TTS — только в памяти и отправляется
+            OpenAI (если выбран). История и кэш аудио не сохраняются после
+            перезагрузки.
           </span>
         </div>
         {validation && (

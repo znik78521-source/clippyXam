@@ -249,3 +249,33 @@ test("abort during empty-response retry prevents a second request; 429 not retri
   );
   assert.equal(calls, 2);
 });
+test("mixed Cyrillic and Chinese output is retried and never displayed", async (t) => {
+  let calls = 0;
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content:
+                  ++calls === 1 ? "Чистая агрессия著" : "Чистая агрессия.",
+              },
+            },
+          ],
+        }),
+      ),
+  );
+  const reply = await requestReply({
+    key: "test",
+    model: DEFAULT_MODEL,
+    character: characters[0],
+    intensity: "wild",
+    history: [],
+    signal: new AbortController().signal,
+  });
+  assert.equal(reply.text, "Чистая агрессия.");
+  assert.equal(calls, 2);
+});

@@ -35,6 +35,34 @@ function sanitizeCompanionSnapshot(input) {
   // Deliberately NOT spread input: no settings, API keys, voice cache or history.
   return {
     character: input.character,
+    cinematic:
+      [
+        "bat",
+        "burrow",
+        "jail",
+        "flame",
+        "rage",
+        "format",
+        "bsod",
+        "update",
+      ].includes(input.cinematic?.kind) &&
+      Number.isSafeInteger(input.cinematic?.id) &&
+      input.cinematic.id >= 0
+        ? { kind: input.cinematic.kind, id: input.cinematic.id }
+        : null,
+    sendResult: {
+      sequence:
+        Number.isSafeInteger(input.sendResult?.sequence) &&
+        input.sendResult.sequence >= 0
+          ? input.sendResult.sequence
+          : 0,
+      success: input.sendResult?.success === true,
+      text:
+        input.sendResult?.success === false &&
+        typeof input.sendResult?.text === "string"
+          ? input.sendResult.text.slice(0, 2000)
+          : "",
+    },
     phase: input.phase,
     animationMood: input.animationMood,
     bubble,

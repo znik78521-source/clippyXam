@@ -23,6 +23,22 @@ export class EmptyReplyError extends Error {
     );
   }
 }
+export class LanguageReplyError extends Error {
+  constructor() {
+    super(
+      "Модель снова ответила не по-русски. Сообщение оставлено в поле; попробуй ещё раз.",
+    );
+  }
+}
+export function assertRussianReply(text: string) {
+  if (
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(
+      text,
+    ) ||
+    (!/[А-Яа-яЁё]/.test(text) && (text.match(/[A-Za-z]/g)?.length || 0) > 12)
+  )
+    throw new LanguageReplyError();
+}
 function visibleText(value: string) {
   return value
     .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
@@ -153,7 +169,14 @@ export async function requestReply(options: {
             max_price: { prompt: 0, completion: 0 },
           },
           messages: [
-            { role: "system", content: system },
+            {
+              role: "system",
+              content:
+                system +
+                (attempt
+                  ? " Повтори ответ строго по-русски, без иероглифов и служебного формата."
+                  : ""),
+            },
             ...history
               .slice(-20)
               .map(({ role, content }) => ({ role, content })),
@@ -193,6 +216,7 @@ export async function requestReply(options: {
           : "";
     try {
       const reply = parseReply(raw);
+      assertRussianReply(reply.text);
       if (
         (intensity === "soft" || options.allowRude === false) &&
         reply.mood === "rude"
@@ -206,7 +230,12 @@ export async function requestReply(options: {
         reply.mood = "rude";
       return reply;
     } catch (error) {
-      if (!(error instanceof EmptyReplyError) || attempt === 1) throw error;
+      if (
+        (!(error instanceof EmptyReplyError) &&
+          !(error instanceof LanguageReplyError)) ||
+        attempt === 1
+      )
+        throw error;
       signal.throwIfAborted();
       options.onRetry?.(); // One bounded repeat on the SAME free model; never retry auth/429.
     }

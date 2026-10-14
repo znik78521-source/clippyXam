@@ -13,7 +13,7 @@ TOP = (
     'index.html', 'tsconfig.json', 'vite.config.ts', 'playwright.config.ts',
 )
 TREES = ('src', 'electron', 'scripts', 'tests', 'docs')
-SUFFIXES = {'.ts', '.tsx', '.css', '.cjs', '.mjs', '.py', '.md'}
+SUFFIXES = {'.ts', '.tsx', '.css', '.cjs', '.mjs', '.py', '.ps1', '.md'}
 
 def files():
     selected = {ROOT / name for name in TOP}

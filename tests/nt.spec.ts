@@ -444,3 +444,88 @@ test("peeking uses its own authored timeline and gesture behind the edge", async
   await expect(page.locator(".peek-active .rude-hand")).toHaveCount(1);
   await expect(page.locator(".nt-balloon")).toContainText("Отвернись");
 });
+test("failed send keeps original text; successful retry clears it and does not duplicate history", async ({
+  page,
+}) => {
+  let calls = 0;
+  let messages: any[] = [];
+  await page.route(endpoint, (route) => {
+    calls++;
+    messages = route.request().postDataJSON().messages;
+    return calls === 1
+      ? route.fulfill({ status: 503, json: {} })
+      : route.fulfill({ json: response("Получилось") });
+  });
+  await connect(page);
+  await send(page, "Не потеряй это сообщение");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Сообщение маскоту" }),
+  ).toHaveValue("Не потеряй это сообщение");
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
+  await expect(page.locator(".nt-balloon")).toContainText("Получилось");
+  await expect(
+    page.getByRole("textbox", { name: "Сообщение маскоту" }),
+  ).toHaveValue("");
+  expect(
+    messages.filter(
+      (m) => m.role === "user" && m.content === "Не потеряй это сообщение",
+    ),
+  ).toHaveLength(1);
+});
+test("failure cannot overwrite a new draft typed while waiting", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route(endpoint, async (route) => {
+    await gate;
+    await route.fulfill({ status: 503, json: {} });
+  });
+  await connect(page);
+  try {
+    await send(page, "Первый");
+    await expect(
+      page.getByRole("button", { name: "Отменить ответ" }),
+    ).toBeVisible();
+    await page
+      .getByRole("textbox", { name: "Сообщение маскоту" })
+      .fill("Новый черновик");
+    release();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Сообщение маскоту" }),
+    ).toHaveValue("Новый черновик");
+  } finally {
+    release();
+  }
+});
+test("all eight visual gags can be previewed without network or OS commands", async ({
+  page,
+}) => {
+  await connect(page);
+  for (const kind of [
+    "bat",
+    "burrow",
+    "jail",
+    "flame",
+    "rage",
+    "format",
+    "bsod",
+    "update",
+  ]) {
+    await settings(page);
+    await page.getByRole("tab", { name: "Поведение", exact: true }).click();
+    await page.getByLabel("Просмотр мемной сценки").selectOption(kind);
+    await page
+      .getByRole("button", { name: "Показать сценку", exact: true })
+      .click();
+    await expect(
+      page.locator(`.nt-stage[data-cinematic="${kind}"]`),
+    ).toBeVisible();
+    await expect(page.locator(`.cinematic-${kind}`)).toBeVisible();
+  }
+  await expect(page.locator(".fake-system")).toContainText(
+    "WINDOWS НЕ ЗАТРОНУТА",
+  );
+});

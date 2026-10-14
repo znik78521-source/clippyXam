@@ -216,3 +216,55 @@ test("local Russian voice is selected and enabled without Windows speech voices"
     page.getByRole("checkbox", { name: "Озвучивать ответы", exact: true }),
   ).toBeChecked();
 });
+test("native saved key loads before onboarding, without storing it in browser storage", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = {
+      mini: true,
+      companion: false,
+      alwaysOnTop: true,
+      maximized: false,
+      minimized: false,
+      focused: true,
+    };
+    window.clippyDesktop = {
+      platform: "win32",
+      getState: async () => state,
+      onState: () => () => {},
+      setCompanion: async () => state,
+      publishCompanion: () => {},
+      onCompanionAction: () => () => {},
+      setMini: async () => state,
+      setAlwaysOnTop: async () => state,
+      minimize: async () => state,
+      toggleMaximize: async () => state,
+      hideToTray: async () => state,
+      close: async () => {},
+      startDictation: async () => "",
+      stopDictation: async () => {},
+      loadSavedKey: async () => ({
+        key: "encrypted-native-test-key",
+        warning: "",
+      }),
+      saveKey: async () => {},
+    };
+  });
+  let header = "";
+  await page.route("https://openrouter.ai/api/v1/chat/completions", (route) => {
+    header = route.request().headers().authorization;
+    return route.fulfill({
+      json: { choices: [{ message: { content: "Ключ загружен." } }] },
+    });
+  });
+  await page.goto("/");
+  await expect(
+    page.getByRole("img", { name: "clippy", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).fill("Привет");
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
+  await expect(page.locator(".nt-balloon")).toContainText("Ключ загружен");
+  expect(header).toBe("Bearer encrypted-native-test-key");
+  expect(await page.evaluate(() => localStorage.length)).toBe(0);
+});

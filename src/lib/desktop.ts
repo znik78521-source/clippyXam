@@ -17,6 +17,8 @@ export interface LocalVoiceState {
   error: string;
 }
 export interface DesktopBridge extends DictationBridge {
+  loadSavedKey?(): Promise<{ key: string; warning: string }>;
+  saveKey?(key: string): Promise<void>;
   localVoiceState?(): Promise<LocalVoiceState>;
   prepareLocalVoice?(): Promise<LocalVoiceState>;
   synthesizeLocalVoice?(text: string, rate: number): Promise<Uint8Array | null>;

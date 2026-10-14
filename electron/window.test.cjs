@@ -62,10 +62,10 @@ function setup(saved = {}) {
   return { win, controller, events, isVisible: () => visible };
 }
 
-test("default compact XP bounds and corrupted/off-screen restoration are safe", () => {
+test("default compact NT bounds and corrupted/off-screen restoration are safe", () => {
   const fallback = fitBounds(null, area, true);
-  assert.equal(fallback.width, 420);
-  assert.equal(fallback.height, 650);
+  assert.equal(fallback.width, 360);
+  assert.equal(fallback.height, 460);
   assert.deepEqual(
     fitBounds({ x: 8000, y: -2000, width: 420, height: 650 }, area, true),
     { x: 1500, y: 0, width: 420, height: 650 },
@@ -86,7 +86,7 @@ test("bounds support negative monitor coordinates and small work areas", () => {
   assert.equal(b.y, 70);
   assert.deepEqual(
     fitBounds(null, { x: 0, y: 0, width: 700, height: 480 }, false),
-    { x: 0, y: 0, width: 700, height: 480 },
+    { x: 196, y: 0, width: 480, height: 480 },
   );
 });
 test("window preferences whitelist geometry, never credentials/history", () => {
@@ -112,7 +112,7 @@ test("native controller remembers independent sizes across mode changes", () => 
   const { win, controller } = setup();
   const compact = win.getBounds();
   controller.setMini(false);
-  assert.equal(win.getBounds().width, 1190);
+  assert.equal(win.getBounds().width, 480);
   win.setBounds({ x: 20, y: 30, width: 1250, height: 780 });
   controller.setMini(true);
   assert.deepEqual(win.getBounds(), compact);
@@ -127,7 +127,7 @@ test("native minimize/restore, maximize, pin and validation", () => {
   assert.equal(isVisible(), true);
   assert.equal(controller.state().minimized, false);
   controller.toggleMaximize();
-  assert.equal(controller.state().mini, false);
+  assert.equal(controller.state().mini, true);
   assert.equal(controller.state().maximized, true);
   controller.toggleMaximize();
   assert.equal(controller.state().maximized, false);

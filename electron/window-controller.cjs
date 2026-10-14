@@ -24,10 +24,7 @@ function createWindowController(win, screen, saved, notify = () => {}) {
   }
   function resizeForMode(bounds) {
     const area = currentArea(bounds || win.getBounds());
-    win.setMinimumSize(
-      Math.min(prefs.mini ? 360 : 900, area.width),
-      Math.min(prefs.mini ? 520 : 620, area.height),
-    );
+    win.setMinimumSize(Math.min(320, area.width), Math.min(400, area.height));
     win.setBounds(fitBounds(bounds, area, prefs.mini));
   }
   function setMini(value) {
@@ -76,7 +73,7 @@ function createWindowController(win, screen, saved, notify = () => {}) {
     },
     toggleMaximize() {
       // A compact assistant stays compact; maximize first changes to the full room.
-      if (prefs.mini) setMini(false);
+
       if (win.isMaximized()) win.unmaximize();
       else win.maximize();
       return emit();

@@ -40,77 +40,20 @@ export function parseReply(raw: string): Reply {
   }
 }
 
-export function demoReply(
-  text: string,
-  character: Character,
-  intensity: Intensity,
-  count = 0,
-): Reply {
-  const lower = text.toLowerCase();
-  const reply = (
-    text: string,
-    mood: Reply["mood"] = "speaking",
-    leaveSeconds = 0,
-  ): Reply => ({ text, mood, leaveSeconds });
-  if (/вернись|прости|извини/.test(lower))
-    return reply(
-      "Ладно, проехали. Но я это запомнил. В оперативной памяти, так что ненадолго.",
-    );
-  if (/уйди|уходи|отстань|бесишь|тупой|заткнись/.test(lower))
-    return reply(
-      intensity === "soft"
-        ? "Ладно, возьму небольшую паузу. Скоро вернусь."
-        : "Ну и пожалуйста. Пойду туда, где ценят скрепки. В канцтовары, например.",
-      "offended",
-      15,
-    );
-  if (/фак|жест|пальц/.test(lower))
-    return intensity === "soft"
-      ? reply("Сегодня обойдёмся без жестов. Считай, тебе повезло.")
-      : reply(
-          "Вот тебе мой развёрнутый ответ. Считай, техническая поддержка сработала.",
-          "rude",
-        );
-  if (/умеешь|помощь|help/.test(lower))
-    return reply(
-      "Могу болтать, закатывать глаза и уходить в самый неподходящий момент. Пока я в демо-режиме — настоящие мозги подключаются в настройках OpenRouter.",
-    );
-  if (/привет|здравств|хай/.test(lower))
-    return reply(
-      character.id === "rover"
-        ? "Гав! Ну наконец-то. Я уже три раза принёс палку сам себе. Рассказывай, как день?"
-        : character.id === "merlin"
-          ? "Приветствую, смертный. Для вызова меня достаточно кнопки. Пентаграмму с рабочего стола можешь убрать."
-          : "Привет-привет. Дай угадаю: открыл компьютер поработать, а теперь разговариваешь со скрепкой?",
-    );
-  if (/обосри|прожарь|roast|подкол/.test(lower))
-    return reply(
-      intensity === "soft"
-        ? "Ты так долго собираешься с мыслями, что у них уже свой чемодан."
-        : intensity === "wild"
-          ? "Твой список дел — это, блин, кладбище амбиций. Даже я, скрепка из девяностых, обновляюсь чаще, чем твои планы."
-          : "У тебя столько открытых вкладок, будто продуктивность считается по их количеству. Спойлер: нет.",
-    );
-  if (/работ|дел|мотивац|дедлайн/.test(lower))
-    return reply(
-      "Закрой лишние вкладки. Поставь таймер на 15 минут. Сделай одну маленькую задачу. Да, это совет от скрепки. Да, он работает.",
-    );
-  const lines =
-    character.id === "rover"
-      ? [
-          "Я бы помог, но у меня лапки. Ладно, шучу. Что именно ищем?",
-          "Обдумал. Погулять всё равно полезнее, чем сидеть перед экраном.",
-        ]
-      : character.id === "merlin"
-        ? [
-            "Хм. Мой хрустальный шар показывает: надо перестать откладывать. Неприятная магия, согласен.",
-            "Заклинание не сработало. Попробуй уточнить вопрос. И не забудь «пожалуйста», это часть ритуала.",
-          ]
-        : [
-            "Я сделал вид, что внимательно слушаю. Прямо как ты на последнем созвоне. Продолжай.",
-            "Звучит как задача для кого-то компетентного. Но здесь только ты и скрепка. Разберёмся?",
-          ];
-  return reply(lines[count % lines.length]);
+export const DEFAULT_MODEL = "openrouter/free";
+export function isFreeModel(model: string): boolean {
+  return (
+    model === DEFAULT_MODEL ||
+    /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(model)
+  );
+}
+export class ChatError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export async function requestReply(options: {
@@ -125,6 +68,11 @@ export async function requestReply(options: {
   allowRude?: boolean;
 }): Promise<Reply> {
   const { key, model, character, intensity, history, signal } = options;
+  if (!key.trim()) throw new ChatError(401, "Нужен API-ключ OpenRouter.");
+  if (!isFreeModel(model))
+    throw new Error(
+      "Разрешены только openrouter/free и модели с суффиксом :free.",
+    );
   const tone = {
     soft: "Добрый юмор, без мата и грубых жестов.",
     normal:
@@ -144,7 +92,8 @@ export async function requestReply(options: {
       body: JSON.stringify({
         model,
         temperature: 0.9,
-        max_tokens: 750,
+        max_tokens: 350,
+        provider: { sort: "latency", max_price: { prompt: 0, completion: 0 } },
         messages: [
           {
             role: "system",
@@ -158,12 +107,13 @@ export async function requestReply(options: {
   if (!response.ok) {
     const errors: Record<number, string> = {
       401: "Ключ не принят. Проверь API-ключ в настройках.",
-      402: "На балансе OpenRouter недостаточно средств.",
+      402: "OpenRouter ограничил бесплатный доступ. Платный маршрут не включён.",
       403: "OpenRouter отклонил запрос. Проверь доступ к модели.",
       404: "Модель не найдена. Проверь её ID в настройках.",
-      429: "Слишком много запросов. Подожди немного и повтори.",
+      429: "Лимит бесплатных запросов. Подожди и повтори; платные модели не используются.",
     };
-    throw new Error(
+    throw new ChatError(
+      response.status,
       errors[response.status] ||
         `OpenRouter недоступен (HTTP ${response.status}). Попробуй позже.`,
     );

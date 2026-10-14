@@ -2,10 +2,14 @@ import { useState } from "react";
 import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
 import Dialog from "./Dialog";
 import { characters } from "../lib/characters";
-import type { CharacterId } from "../lib/characters";
+import { DEFAULT_MODEL, isFreeModel } from "../lib/chat";
+import type { CharacterId, Intensity } from "../lib/characters";
 import type { CompanionPreferences } from "../lib/preferences";
 export interface SettingsData {
-  mode: "demo" | "live";
+  character: CharacterId;
+  intensity: Intensity;
+  sound: boolean;
+  widget: boolean;
   key: string;
   model: string;
   voice: string;
@@ -59,12 +63,11 @@ export default function Settings({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (
-            draft.mode === "live" &&
-            (!draft.key.trim() || !draft.model.trim())
-          ) {
+          if (!isFreeModel(draft.model.trim())) {
             setTab("connection");
-            setValidation("Укажи API-ключ и ID модели.");
+            setValidation(
+              "Укажи openrouter/free или ID бесплатной модели с суффиксом :free.",
+            );
             return;
           }
           if (draft.ttsProvider === "openai" && !draft.ttsKey.trim()) {
@@ -132,32 +135,41 @@ export default function Settings({
           hidden={tab !== "connection"}
         >
           <legend>Подключение</legend>
-          <div className="mode-options">
-            <label className={draft.mode === "demo" ? "chosen" : ""}>
-              <input
-                type="radio"
-                name="mode"
-                checked={draft.mode === "demo"}
-                onChange={() => setDraft({ ...draft, mode: "demo" })}
-              />
-              <span>
-                <b>Демо-режим</b>
-                <small>Локальные реплики, без API</small>
-              </span>
-            </label>
-            <label className={draft.mode === "live" ? "chosen" : ""}>
-              <input
-                type="radio"
-                name="mode"
-                checked={draft.mode === "live"}
-                onChange={() => setDraft({ ...draft, mode: "live" })}
-              />
-              <span>
-                <b>OpenRouter</b>
-                <small>Настоящий AI-диалог</small>
-              </span>
-            </label>
-          </div>
+          <label className="field-label" htmlFor="character">
+            Персонаж
+          </label>
+          <select
+            id="character"
+            value={draft.character}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                character: event.target.value as CharacterId,
+              })
+            }
+          >
+            {characters.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+            <option disabled>Courtney — нет ресурсов</option>
+            <option disabled>Earl — нет ресурсов</option>
+          </select>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.widget}
+              onChange={(event) =>
+                setDraft({ ...draft, widget: event.target.checked })
+              }
+            />
+            Виджет на рабочем столе
+          </label>
+          <p className="field-help">
+            Без фона окна, со стилизованными кнопками закрытия и сворачивания. В
+            браузере — только предпросмотр внутри страницы.
+          </p>
           <label className="field-label" htmlFor="api-key">
             API-ключ OpenRouter
           </label>
@@ -200,12 +212,14 @@ export default function Settings({
             onChange={(event) =>
               setDraft({ ...draft, model: event.target.value })
             }
-            placeholder="google/gemini-2.5-flash"
+            placeholder={DEFAULT_MODEL}
             spellCheck={false}
           />
           <p className="field-help">
-            Укажи доступную тебе текстовую модель из каталога OpenRouter.
-            Запросы могут быть платными.
+            По умолчанию openrouter/free — автоматический выбор бесплатной
+            модели. Можно указать другой ID с :free. Приоритет низкой задержки,
+            но скорость и доступность не гарантируются. Есть лимиты сервиса.
+            Платного fallback нет.
           </p>
         </fieldset>
         <fieldset
@@ -217,6 +231,23 @@ export default function Settings({
           <legend>
             <Volume2 size={13} /> Озвучка
           </legend>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.sound}
+              onChange={(event) =>
+                setDraft({ ...draft, sound: event.target.checked })
+              }
+            />
+            Озвучивать ответы
+          </label>
+          <p className="field-help">
+            Голосовой ввод: кнопка микрофона в главном окне. В Windows нужен
+            совместимый ru-RU распознаватель System.Speech; обычного языкового
+            пакета может быть недостаточно. В браузере распознавание может
+            использовать сервис его поставщика. Текст сначала попадает в поле, а
+            не отправляется сразу.
+          </p>
           <label className="field-label" htmlFor="tts-provider">
             Провайдер голоса
           </label>
@@ -347,6 +378,20 @@ export default function Settings({
           hidden={tab !== "behavior"}
         >
           <legend>Характер и границы</legend>
+          <label className="field-label" htmlFor="intensity">
+            Характер
+          </label>
+          <select
+            id="intensity"
+            value={draft.intensity}
+            onChange={(event) =>
+              setDraft({ ...draft, intensity: event.target.value as Intensity })
+            }
+          >
+            <option value="soft">Мягко</option>
+            <option value="normal">С характером</option>
+            <option value="wild">Без тормозов</option>
+          </select>
           <label className="setting-check">
             <input
               type="checkbox"
@@ -473,10 +518,10 @@ export default function Settings({
           </p>
         )}
         <div className="dialog-buttons">
-          <button className="xp-button primary" type="submit">
+          <button className="nt-button primary" type="submit">
             Применить
           </button>
-          <button className="xp-button" type="button" onClick={onClose}>
+          <button className="nt-button" type="button" onClick={onClose}>
             Отмена
           </button>
         </div>

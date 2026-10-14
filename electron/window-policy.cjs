@@ -1,6 +1,6 @@
 // Pure policies shared by the native shell and its tests. No Electron required.
-const MINI_SIZE = { width: 420, height: 650 };
-const FULL_SIZE = { width: 1190, height: 740 };
+const MINI_SIZE = { width: 360, height: 460 };
+const FULL_SIZE = { width: 480, height: 560 };
 const EXTERNAL_URLS = new Set([
   "https://openrouter.ai/keys",
   "https://github.com/pi0/clippyjs",
@@ -27,12 +27,8 @@ function fitBounds(bounds, area, mini) {
         x: area.x + area.width - defaults.width - 24,
         y: area.y + area.height - defaults.height - 24,
       };
-  const width = Math.round(
-    Math.min(area.width, Math.max(mini ? 360 : 900, input.width)),
-  );
-  const height = Math.round(
-    Math.min(area.height, Math.max(mini ? 520 : 620, input.height)),
-  );
+  const width = Math.round(Math.min(area.width, Math.max(320, input.width)));
+  const height = Math.round(Math.min(area.height, Math.max(400, input.height)));
   return {
     x: Math.round(
       Math.max(area.x, Math.min(input.x, area.x + area.width - width)),

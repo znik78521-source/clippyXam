@@ -90,7 +90,7 @@ function createPointerController({
     try {
       apply(false, true);
     } catch {
-      error = "Не удалось вернуть клики. Верни XP-окно через трей.";
+      error = "Не удалось вернуть клики. Верни основное окно через трей.";
     }
     if (!disposed) changed(state());
     return state();
@@ -155,7 +155,7 @@ function createPointerController({
     try {
       apply(false);
     } catch {
-      disable("Ошибка окна. Верни XP через трей.");
+      disable("Ошибка окна. Верни основное окно через трей.");
     }
   }
   function dispose() {

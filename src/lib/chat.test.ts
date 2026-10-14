@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { demoReply, parseReply, requestReply } from "./chat";
+import { DEFAULT_MODEL, isFreeModel, parseReply, requestReply } from "./chat";
 import { characters } from "./characters";
 
 test("parses structured model actions and fenced JSON", () => {
@@ -36,27 +36,6 @@ test("handles plain text, malformed JSON, null, and empty replies", () => {
   assert.ok(parseReply("").text.length > 0);
   assert.equal(parseReply("a".repeat(3000)).text.length, 2500);
 });
-test("demo departure, forgiveness, rude action and gentle mode", () => {
-  assert.equal(demoReply("Уйди", characters[0], "normal").leaveSeconds, 15);
-  assert.equal(
-    demoReply("Извини, вернись", characters[0], "normal").leaveSeconds,
-    0,
-  );
-  assert.equal(demoReply("Покажи фак", characters[0], "wild").mood, "rude");
-  assert.notEqual(demoReply("Покажи фак", characters[0], "soft").mood, "rude");
-  assert.notEqual(
-    demoReply("Прожарь меня", characters[0], "wild").text,
-    demoReply("Прожарь меня", characters[0], "soft").text,
-  );
-});
-test("demo personas differ and generic replies vary", () => {
-  assert.match(demoReply("Привет", characters[1], "normal").text, /Гав/);
-  assert.match(demoReply("Привет", characters[2], "normal").text, /смертный/);
-  assert.notEqual(
-    demoReply("abc", characters[0], "normal", 1).text,
-    demoReply("abc", characters[0], "normal", 2).text,
-  );
-});
 test("API sends credentials only to OpenRouter, bounds history and soft gestures", async (t) => {
   let payload: Record<string, any> = {};
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
@@ -80,7 +59,7 @@ test("API sends credentials only to OpenRouter, bounds history and soft gestures
   });
   const result = await requestReply({
     key: "test-key",
-    model: "test/model",
+    model: "test/model:free",
     character: characters[0],
     intensity: "soft",
     history: Array.from({ length: 40 }, (_, i) => ({
@@ -91,7 +70,12 @@ test("API sends credentials only to OpenRouter, bounds history and soft gestures
     })),
     signal: new AbortController().signal,
   });
-  assert.equal(payload.model, "test/model");
+  assert.equal(payload.model, "test/model:free");
+  assert.deepEqual(payload.provider, {
+    sort: "latency",
+    max_price: { prompt: 0, completion: 0 },
+  });
+  assert.equal(payload.max_tokens, 350);
   assert.equal(payload.messages.length, 21);
   assert.equal(payload.messages[0].role, "system");
   assert.equal(payload.messages[1].content, "20");
@@ -105,7 +89,7 @@ test("API rejects unauthorized and empty responses with useful errors", async (t
   );
   const options = {
     key: "bad",
-    model: "test/model",
+    model: "test/model:free",
     character: characters[0],
     intensity: "normal" as const,
     history: [],
@@ -132,7 +116,7 @@ test("API preserves abort signal for cancellation", async (t) => {
     () =>
       requestReply({
         key: "test",
-        model: "test/model",
+        model: "test/model:free",
         character: characters[0],
         intensity: "normal",
         history: [],
@@ -140,4 +124,45 @@ test("API preserves abort signal for cancellation", async (t) => {
       }),
     { name: "AbortError" },
   );
+});
+
+test("only zero-cost routes are accepted and paid IDs fail before fetch", async (t) => {
+  assert.equal(DEFAULT_MODEL, "openrouter/free");
+  for (const id of [DEFAULT_MODEL, "vendor/mini:free"])
+    assert.equal(isFreeModel(id), true);
+  for (const id of [
+    "openrouter/auto",
+    "vendor/mini",
+    "vendor/mini:free:nitro",
+    "",
+  ])
+    assert.equal(isFreeModel(id), false);
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("must not fetch");
+  });
+  await assert.rejects(
+    () =>
+      requestReply({
+        key: "test",
+        model: "paid/model",
+        character: characters[0],
+        intensity: "normal",
+        history: [],
+        signal: new AbortController().signal,
+      }),
+    /только/,
+  );
+  await assert.rejects(
+    () =>
+      requestReply({
+        key: "",
+        model: DEFAULT_MODEL,
+        character: characters[0],
+        intensity: "normal",
+        history: [],
+        signal: new AbortController().signal,
+      }),
+    /API-ключ/,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
 });

@@ -31,6 +31,7 @@ const {
 } = require("./companion-controller.cjs");
 const { createPointerController } = require("./pointer-controller.cjs");
 const pointerControllers = new WeakMap();
+const dictation = require("./dictation.cjs").createDictation();
 app.setName("clippyXam");
 if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam.dev");
 
@@ -84,7 +85,7 @@ function updateTray() {
   const state = controller.state();
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Вернуть XP-окно", click: restoreOwner },
+      { label: "Вернуть окно", click: restoreOwner },
       {
         label: "Маскот на рабочем столе",
         type: "checkbox",
@@ -95,7 +96,7 @@ function updateTray() {
               restoreOwner();
               dialog.showErrorBox(
                 "clippyXam",
-                "Не удалось открыть прозрачное окно. Обычное XP-окно восстановлено.",
+                "Не удалось открыть прозрачное окно. Обычное окно восстановлено.",
               );
             });
           else restoreOwner();
@@ -226,6 +227,19 @@ function installCompanionIPC() {
     if (!trustedSurface(event)) return;
     pointerControllers.get(companion.getWindow()).update(input);
   });
+  const trustedDictation = (event) =>
+    trustedSurface(event) ||
+    (win && isTrustedFrame(event, win.webContents, devURL));
+  ipcMain.handle("dictation:start", (event) => {
+    if (!trustedDictation(event))
+      throw new Error("Untrusted microphone command");
+    return dictation.start(event.sender);
+  });
+  ipcMain.handle("dictation:stop", (event) => {
+    if (!trustedDictation(event))
+      throw new Error("Untrusted microphone command");
+    dictation.stop(event.sender);
+  });
   ipcMain.handle("companion:ready", (event) => {
     if (!trustedSurface(event)) throw new Error("Untrusted companion");
     companion.getWindow().webContents.emit("companion:renderer-ready");
@@ -241,6 +255,24 @@ function installCompanionIPC() {
     const action = sanitizeCompanionAction(input);
     if (action.type === "restore") {
       restoreOwner();
+      return true;
+    }
+    if (action.type === "close") {
+      app.quit();
+      return true;
+    }
+    if (action.type === "minimize") {
+      companion.getWindow().minimize();
+      return true;
+    }
+    if (action.type === "maximize") {
+      restoreOwner();
+      controller.toggleMaximize();
+      return true;
+    }
+    if (action.type === "settings" || action.type === "settings-widget") {
+      restoreOwner();
+      win.webContents.send("companion:owner-action", action);
       return true;
     }
     if (action.type === "send" && companionSnapshot?.pending) return false;
@@ -315,14 +347,14 @@ async function createWindow() {
   const bounds = fitBounds(candidate, area, prefs.mini);
   win = new BrowserWindow({
     ...bounds,
-    minWidth: Math.min(prefs.mini ? 360 : 900, area.width),
-    minHeight: Math.min(prefs.mini ? 520 : 620, area.height),
+    minWidth: Math.min(320, area.width),
+    minHeight: Math.min(400, area.height),
     title: "clippyXam",
     icon: iconPath,
     frame: false,
     roundedCorners: false,
     transparent: false,
-    backgroundColor: "#ece9d8",
+    backgroundColor: "#c0c0c0",
     show: false,
     resizable: true,
     maximizable: true,
@@ -416,6 +448,7 @@ async function createWindow() {
   win.on("close", savePreferences);
   win.on("closed", () => {
     quitting = true;
+    dictation.stop();
     companion?.dispose();
     win = null;
     app.quit();
@@ -463,6 +496,7 @@ else {
     });
   app.on("before-quit", () => {
     quitting = true;
+    dictation.stop();
     companion?.dispose();
     clearTimeout(saveTimer);
     savePreferences();

@@ -62,6 +62,11 @@ function sanitizeCompanionAction(input) {
       "return",
       "stop-speech",
       "cancel-reply",
+      "settings-widget",
+      "settings",
+      "minimize",
+      "maximize",
+      "close",
     ].includes(input.type)
   )
     return { type: input.type };

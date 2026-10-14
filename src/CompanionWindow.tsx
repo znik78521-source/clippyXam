@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { useCompanionPointer } from "./lib/useCompanionPointer";
+
 import { CompanionScene } from "./components/CompanionScene";
 import { initialCompanionSnapshot } from "./lib/companion";
 import type { CompanionAction } from "./lib/companion";
 
 /** Passive view only: no API keys, chat engine, timers or speech synthesis here. */
 export default function CompanionWindow() {
-  const pointer = useCompanionPointer();
   const [loaded, setLoaded] = useState(false);
   const [snapshot, setSnapshot] = useState(initialCompanionSnapshot);
   useEffect(() => {
@@ -34,7 +33,7 @@ export default function CompanionWindow() {
           setSnapshot((current) => ({
             ...current,
             error:
-              "Не удалось подключиться. Верни XP-окно через трей или панель задач.",
+              "Не удалось подключиться. Верни основное окно через трей или панель задач.",
           }));
       });
     return () => {
@@ -48,8 +47,8 @@ export default function CompanionWindow() {
   return (
     <CompanionScene
       snapshot={snapshot}
-      pointer={pointer.state}
-      onTogglePointer={pointer.toggle}
+      widget
+      native
       onAction={(action: CompanionAction) =>
         window.clippyCompanion?.action(action) || Promise.resolve(false)
       }

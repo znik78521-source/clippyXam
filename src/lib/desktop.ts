@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { DictationBridge } from "./useDictation";
 import type { CompanionAction, CompanionSnapshot } from "./companion";
 
 export interface DesktopState {
@@ -10,7 +11,7 @@ export interface DesktopState {
   trayAvailable?: boolean;
   companion?: boolean;
 }
-export interface DesktopBridge {
+export interface DesktopBridge extends DictationBridge {
   readonly platform: string;
   getState(): Promise<DesktopState>;
   setCompanion(value: boolean): Promise<DesktopState>;

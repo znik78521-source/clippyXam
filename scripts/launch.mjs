@@ -115,7 +115,7 @@ async function main() {
   console.log(
     mode === "check"
       ? "Running source checks (no compilation or paid API calls)..."
-      : "Starting XP desktop window. Keep this console open. Close the app via X or the tray menu.",
+      : "Starting NT-style desktop window. Keep this console open. Close the app via X or the tray menu.",
   );
   process.exitCode = await run(mode);
 }

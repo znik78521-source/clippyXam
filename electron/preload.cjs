@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld(
   "clippyDesktop",
   Object.freeze({
+    startDictation: () => ipcRenderer.invoke("dictation:start"),
+    stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     platform: process.platform,
     getState: () => ipcRenderer.invoke("window:get-state"),
     setCompanion: (value) => ipcRenderer.invoke("window:set-companion", value),

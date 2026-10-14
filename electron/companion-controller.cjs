@@ -52,7 +52,7 @@ function createCompanionController({
     own.webContents.on("render-process-gone", () => {
       if (surface !== own || disposed) return;
       close();
-      failed("Прозрачное окно остановилось. Возвращено обычное XP-окно.");
+      failed("Прозрачное окно остановилось. Возвращено основное окно.");
     });
     const promise = (async () => {
       try {

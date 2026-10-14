@@ -1,74 +1,53 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  MousePointer2,
-  ArrowUpLeft,
-  Coffee,
-  GripHorizontal,
-  Send,
-  Square,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { Mic, Square, Settings, Minus, X, Maximize2 } from "lucide-react";
 import Mascot from "./Mascot";
 import SpeechText from "./SpeechText";
 import { RudeHand } from "./Icons";
-import type { CharacterId } from "../lib/characters";
-import { characters } from "../lib/characters";
-import type {
-  PointerState,
-  CompanionAction,
-  CompanionSnapshot,
-} from "../lib/companion";
+import { useDictation } from "../lib/useDictation";
+import type { CompanionAction, CompanionSnapshot } from "../lib/companion";
 
 export function CompanionScene({
   snapshot,
   onAction,
-  preview = false,
-  pointer,
-  onTogglePointer,
+  widget = false,
+  native = false,
+  inactive = false,
 }: {
   snapshot: CompanionSnapshot;
   onAction: (action: CompanionAction) => Promise<boolean>;
-  preview?: boolean;
-  pointer?: PointerState;
-  onTogglePointer?: () => void;
+  widget?: boolean;
+  native?: boolean;
+  inactive?: boolean;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const [changing, setChanging] = useState<CharacterId | null>(null);
+  const alive = useRef(true);
   useEffect(() => {
-    if (!changing) return;
-    if (snapshot.character === changing) {
-      setChanging(null);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setChanging(null);
-      setError(
-        "Смена персонажа не подтверждена. Верни XP-окно и проверь связь.",
-      );
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [changing, snapshot.character]);
-  const character = characters.find((item) => item.id === snapshot.character)!;
-  const active = useRef(true);
-  useEffect(() => {
-    active.current = true;
+    alive.current = true;
     return () => {
-      active.current = false;
+      alive.current = false;
     };
   }, []);
+  const dictation = useDictation(
+    (value) =>
+      setText((current) =>
+        ((current ? current + " " : "") + value).slice(0, 2000),
+      ),
+    setError,
+  );
+  useEffect(() => {
+    dictation.stop();
+    setText("");
+    setError("");
+  }, [snapshot.character]);
   async function act(action: CompanionAction) {
     try {
-      const accepted = await onAction(action);
-      if (active.current)
-        setError(accepted ? "" : "Предыдущая реплика ещё обрабатывается.");
-      return accepted;
+      return await onAction(action);
     } catch {
-      if (active.current)
+      if (alive.current)
         setError(
-          "Нет связи с XP-окном. Верни его через панель задач или трей.",
+          "Команда недоступна. Верни окно через трей или повторный запуск.",
         );
       return false;
     }
@@ -76,320 +55,187 @@ export function CompanionScene({
   const actionRef = useRef(act);
   actionRef.current = act;
   useEffect(() => {
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        event.preventDefault();
+    if (!widget) return;
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        e.preventDefault();
+        dictation.stop();
         void actionRef.current({ type: "restore" });
       }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, []);
+  }, [widget]);
   return (
-    <section className="companion-scene" aria-label="Маскот на рабочем столе">
-      <header className="companion-controls" data-companion-hit>
-        <span className="companion-drag">
-          <GripHorizontal size={15} />
-          <b>{character.name}</b>
-          <small>{preview ? "предпросмотр" : "на рабочем столе"}</small>
+    <section
+      className={`nt-companion ${widget ? "nt-widget" : ""} ${inactive ? "nt-inactive" : ""} ${native ? "nt-window-native" : ""}`}
+      aria-label="Помощник clippyXam"
+    >
+      <header className="nt-caption" data-companion-hit>
+        <span className="nt-drag">
+          <img src="/favicon.svg" alt="" />
+          clippyXam
         </span>
-        {pointer && (
+        <div className="nt-window-buttons">
           <button
-            aria-label="Пропуск кликов через пустые области"
-            aria-pressed={pointer.enabled}
-            disabled={!pointer.available}
-            title={
-              pointer.available
-                ? "Экспериментально: пропуск кликов только через пустые области"
-                : "Доступно в Windows/macOS"
-            }
-            onClick={onTogglePointer}
+            aria-label="Свернуть"
+            title="Свернуть"
+            onClick={() => {
+              dictation.stop();
+              void act({ type: "minimize" });
+            }}
           >
-            <MousePointer2 size={15} />
+            <Minus size={13} />
           </button>
-        )}
-        <button
-          onClick={() => void act({ type: "toggle-sound" })}
-          aria-label={
-            snapshot.sound
-              ? "Выключить озвучку маскота"
-              : "Включить озвучку маскота"
-          }
-          title={snapshot.quiet ? "Тихие часы" : "Озвучка"}
-        >
-          {snapshot.sound && !snapshot.quiet ? (
-            <Volume2 size={16} />
-          ) : (
-            <VolumeX size={16} />
-          )}
-        </button>
-        <button
-          className="return-xp"
-          onClick={() => void act({ type: "restore" })}
-          aria-label="Вернуть XP-окно"
-          title="Вернуть XP-окно · Esc"
-        >
-          <ArrowUpLeft size={14} /> XP
-        </button>
+          <button
+            aria-label={widget ? "Вернуть обычное окно" : "Развернуть"}
+            title={widget ? "Вернуть обычное окно" : "Развернуть"}
+            onClick={() => {
+              dictation.stop();
+              void act({ type: widget ? "restore" : "maximize" });
+            }}
+          >
+            <Maximize2 size={12} />
+          </button>
+          <button
+            aria-label="Закрыть приложение"
+            title="Закрыть"
+            onClick={() => {
+              dictation.stop();
+              void act({ type: "close" });
+            }}
+          >
+            <X size={13} />
+          </button>
+        </div>
       </header>
       <div
-        className={`companion-art phase-${snapshot.phase}`}
+        className={`nt-stage phase-${snapshot.phase}`}
         data-away={snapshot.away}
       >
-        {snapshot.phase !== "away" && (
-          <div className="companion-balloon" data-companion-hit role="status">
+        <div className="nt-balloon" data-companion-hit role="status">
+          {snapshot.phase === "away" ? (
+            <span>
+              Ушёл остыть. Вернётся через {snapshot.seconds} с.{" "}
+              <button
+                className="nt-text-button"
+                onClick={() => void act({ type: "return" })}
+              >
+                Позвать
+              </button>
+            </span>
+          ) : (
             <SpeechText text={snapshot.bubble} range={snapshot.highlight} />
-          </div>
-        )}
-        {snapshot.phase === "away" && (
-          <div className="companion-away" data-companion-hit>
-            <Coffee size={25} />
-            <b>Демонстративно ушёл.</b>
-            <span>Вернётся через {snapshot.seconds} с</span>
+          )}
+          {snapshot.speechBusy && (
             <button
-              className="xp-button"
-              onClick={() => void act({ type: "return" })}
+              className="nt-stop-speech"
+              title="Остановить озвучку"
+              aria-label="Остановить озвучку"
+              onClick={() => void act({ type: "stop-speech" })}
             >
-              Позвать обратно
+              <Square size={10} />
             </button>
-          </div>
-        )}
-        <div className="companion-actor" data-companion-hit>
+          )}
+        </div>
+        <div className="nt-actor" data-companion-hit>
           <Mascot
-            id={character.id}
+            id={snapshot.character}
             mood={snapshot.animationMood}
-            size={character.id === "clippy" ? 224 : 182}
+            size={snapshot.character === "clippy" ? 205 : 176}
           />
-          {snapshot.phase === "rude" && <RudeHand character={character.id} />}
+          {snapshot.phase === "rude" && (
+            <RudeHand character={snapshot.character} />
+          )}
         </div>
       </div>
-      <div className="companion-chat" data-companion-hit>
-        <div className="companion-quickbar">
-          <label>
-            Маскот
-            <select
-              aria-label="Персонаж на рабочем столе"
-              value={changing || snapshot.character}
-              disabled={Boolean(changing)}
-              onChange={async (event) => {
-                const next = event.target.value as CharacterId;
-                if (next === snapshot.character) return;
-                setChanging(next);
-                if (
-                  !(await act({ type: "select-character", character: next })) &&
-                  active.current
-                )
-                  setChanging(null);
-              }}
-            >
-              {characters.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-              <option disabled value="courtney">
-                Courtney — нет ресурсов
-              </option>
-              <option disabled value="earl">
-                Earl — нет ресурсов
-              </option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="companion-stop-voice"
-            disabled={!snapshot.speechBusy}
-            onClick={() => void act({ type: "stop-speech" })}
-            aria-label="Остановить озвучку маскота"
-            title="Остановить текущую озвучку и очередь, не выключая звук"
-          >
-            <Square size={11} />
-            {snapshot.speechBusy
-              ? snapshot.speaking
-                ? "Стоп голос"
-                : "Стоп TTS"
-              : "Голос"}
-          </button>
-        </div>
-        {(error || pointer?.error || snapshot.error || snapshot.notice) && (
+      <footer className="nt-composer" data-companion-hit>
+        {(error || snapshot.error || snapshot.notice) && (
           <p
-            className="companion-notice"
-            role={
-              error || pointer?.error || snapshot.error ? "alert" : "status"
-            }
+            className="nt-notice"
+            role={error || snapshot.error ? "alert" : "status"}
           >
-            {error || pointer?.error || snapshot.error || snapshot.notice}
+            {error || snapshot.error || snapshot.notice}
+          </p>
+        )}
+        {dictation.listening && (
+          <p className="nt-listening" role="status">
+            Слушаю… Нажми микрофон ещё раз, чтобы отменить.
           </p>
         )}
         <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (!text.trim() || sending || snapshot.pending || changing) return;
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (
+              !text.trim() ||
+              snapshot.pending ||
+              sending ||
+              dictation.listening
+            )
+              return;
             setSending(true);
             setError("");
             const submitted = text;
-            const accepted = await act({ type: "send", text: submitted });
-            if (active.current) {
-              if (accepted)
+            const ok = await act({ type: "send", text: submitted });
+            if (alive.current) {
+              if (ok)
                 setText((current) => (current === submitted ? "" : current));
               setSending(false);
             }
           }}
         >
           <input
-            aria-label="Сообщение маскоту на рабочем столе"
+            aria-label="Сообщение маскоту"
             placeholder={
-              snapshot.away
-                ? "Можешь написать. Он выглянет…"
-                : `Скажи что-нибудь ${character.name}…`
+              snapshot.pending ? "Думает…" : "Сообщение… Enter — отправить"
             }
-            value={text}
             maxLength={2000}
-            onChange={(event) => setText(event.target.value)}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
           />
           {snapshot.pending && (
             <button
               type="button"
-              className="cancel-reply"
+              title="Отменить ответ"
+              aria-label="Отменить ответ"
               onClick={() => void act({ type: "cancel-reply" })}
-              aria-label="Отменить ответ маскота"
             >
-              Стоп
+              <Square size={12} />
             </button>
           )}
           <button
-            className="send-button"
-            aria-label="Отправить маскоту на рабочем столе"
-            disabled={
-              !text.trim() || snapshot.pending || sending || Boolean(changing)
+            type="button"
+            aria-label={
+              dictation.listening
+                ? "Остановить голосовой ввод"
+                : "Голосовой ввод"
             }
+            aria-pressed={dictation.listening}
+            title={
+              native
+                ? "Голосовой ввод Windows (русский распознаватель)"
+                : "Голосовой ввод: браузер может передавать аудио своему сервису"
+            }
+            onClick={() => {
+              setError("");
+              void dictation.start();
+            }}
           >
-            {snapshot.pending || sending ? (
-              <span className="sending-spinner" />
-            ) : (
-              <Send size={14} />
-            )}
+            <Mic size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Настройки"
+            title="Настройки"
+            onClick={() => {
+              dictation.stop();
+              void act({ type: widget ? "settings-widget" : "settings" });
+            }}
+          >
+            <Settings size={15} />
           </button>
         </form>
-        <div className="companion-hint">
-          <span>
-            {snapshot.quiet
-              ? "Тихие часы · только текст"
-              : snapshot.pending
-                ? "Подбирает слова…"
-                : pointer?.enabled
-                  ? "Пустые области пропускают клики"
-                  : "Enter — отправить"}
-          </span>
-          <span>Esc — к XP-окну</span>
-        </div>
-      </div>
+      </footer>
     </section>
-  );
-}
-
-export function FloatingCompanion({
-  snapshot,
-  onAction,
-}: {
-  snapshot: CompanionSnapshot;
-  onAction: (action: CompanionAction) => Promise<boolean>;
-}) {
-  const [passthrough, setPassthrough] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-  } | null>(null);
-  const [position, setPosition] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
-  useEffect(() => {
-    const clamp = () =>
-      setPosition((current) => {
-        if (!current || !ref.current) return current;
-        const box = ref.current.getBoundingClientRect();
-        return {
-          left: Math.max(
-            0,
-            Math.min(current.left, window.innerWidth - box.width),
-          ),
-          top: Math.max(
-            0,
-            Math.min(current.top, window.innerHeight - box.height - 35),
-          ),
-        };
-      });
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, []);
-  return (
-    <div
-      ref={ref}
-      className={`floating-companion ${passthrough ? "pointer-passthrough" : ""}`}
-      style={
-        position
-          ? {
-              left: position.left,
-              top: position.top,
-              right: "auto",
-              bottom: "auto",
-            }
-          : undefined
-      }
-      onPointerDown={(event) => {
-        if (
-          !(event.target as HTMLElement).closest(".companion-drag") ||
-          event.button !== 0 ||
-          !ref.current
-        )
-          return;
-        const rect = ref.current.getBoundingClientRect();
-        drag.current = {
-          x: event.clientX,
-          y: event.clientY,
-          left: rect.left,
-          top: rect.top,
-        };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        if (!drag.current || !ref.current) return;
-        const rect = ref.current.getBoundingClientRect();
-        setPosition({
-          left: Math.max(
-            0,
-            Math.min(
-              window.innerWidth - rect.width,
-              drag.current.left + event.clientX - drag.current.x,
-            ),
-          ),
-          top: Math.max(
-            0,
-            Math.min(
-              window.innerHeight - rect.height - 35,
-              drag.current.top + event.clientY - drag.current.y,
-            ),
-          ),
-        });
-      }}
-      onPointerUp={() => {
-        drag.current = null;
-      }}
-      onLostPointerCapture={() => {
-        drag.current = null;
-      }}
-    >
-      <CompanionScene
-        snapshot={snapshot}
-        onAction={onAction}
-        preview
-        pointer={{ available: true, enabled: passthrough, error: "" }}
-        onTogglePointer={() => setPassthrough(!passthrough)}
-      />
-    </div>
   );
 }

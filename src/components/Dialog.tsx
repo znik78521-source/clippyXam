@@ -59,7 +59,7 @@ export default function Dialog({
     >
       <div
         ref={ref}
-        className={`xp-window dialog ${wide ? "wide" : ""}`}
+        className={`nt-window dialog ${wide ? "wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -1,3 +1,4 @@
+import type { DictationBridge } from "./useDictation";
 import type { CharacterId, Mood } from "./characters";
 import type { WordRange } from "./speech-progress";
 export interface CompanionSnapshot {
@@ -25,7 +26,12 @@ export type CompanionAction =
         | "toggle-sound"
         | "return"
         | "stop-speech"
-        | "cancel-reply";
+        | "cancel-reply"
+        | "settings-widget"
+        | "settings"
+        | "minimize"
+        | "maximize"
+        | "close";
     };
 export interface PointerState {
   available: boolean;
@@ -38,7 +44,7 @@ export interface HitMap {
   interacting: boolean;
   rects: { x: number; y: number; width: number; height: number }[];
 }
-export interface CompanionBridge {
+export interface CompanionBridge extends DictationBridge {
   getPointerState(): Promise<PointerState>;
   setPointerPassthrough(value: boolean): Promise<PointerState>;
   publishHitMap(map: HitMap): void;

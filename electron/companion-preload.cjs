@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld(
   "clippyCompanion",
   Object.freeze({
+    startDictation: () => ipcRenderer.invoke("dictation:start"),
+    stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     getPointerState: () => ipcRenderer.invoke("companion:pointer-state"),
     setPointerPassthrough: (value) =>
       ipcRenderer.invoke("companion:set-pointer", value),

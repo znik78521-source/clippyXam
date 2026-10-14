@@ -41,6 +41,13 @@ export function useDictation(
     void bridge?.stopDictation?.().catch(() => {});
     setListening(false);
   }
+  useEffect(() => {
+    const hidden = () => {
+      if (document.hidden) stop();
+    };
+    document.addEventListener("visibilitychange", hidden);
+    return () => document.removeEventListener("visibilitychange", hidden);
+  }, []);
   useEffect(
     () => () => {
       generation.current++;
@@ -60,11 +67,25 @@ export function useDictation(
     if (bridge) {
       try {
         const text = await bridge.startDictation();
-        if (id === generation.current && text) onText(text.slice(0, 2000));
-      } catch {
+        if (id === generation.current) {
+          if (text) onText(text.slice(0, 2000));
+          else
+            onError(
+              "Речь не распознана. Попробуй ещё раз или нажми поле ввода и Win+H.",
+            );
+        }
+      } catch (cause) {
         if (id === generation.current)
           onError(
-            "Голосовой ввод недоступен. Нужны Windows, совместимый ru-RU распознаватель System.Speech и разрешение микрофона для desktop-приложений. Можно вводить текст вручную.",
+            (cause instanceof Error
+              ? cause.message
+                  .replace(
+                    /^Error invoking remote method '[^']+': (Error: )?/,
+                    "",
+                  )
+                  .slice(0, 250)
+              : "Голосовой ввод недоступен.") +
+              " Запасной способ в Windows: нажми поле ввода, затем Win+H. Текст можно ввести вручную.",
           );
       } finally {
         if (id === generation.current) setListening(false);
@@ -79,7 +100,14 @@ export function useDictation(
       );
       return;
     }
-    const service = new Ctor();
+    let service: Recognition;
+    try {
+      service = new Ctor();
+    } catch {
+      setListening(false);
+      onError("Не удалось открыть распознаватель. Введи текст вручную.");
+      return;
+    }
     recognition.current = service;
     service.lang = "ru-RU";
     service.continuous = false;

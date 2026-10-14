@@ -1,0 +1,64 @@
+name: Windows portable
+on:
+  push:
+    branches: [arena/f226a31f-clippyxam]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npx playwright install chromium
+      - run: npm run test:e2e -- --workers=2
+      - run: npm run portable:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - run: npm run test:packaged
+      - name: Check portable launcher
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem release/*-portable.exe).FullName
+          $p = Start-Process $exe -ArgumentList '--remote-debugging-port=9333','--remote-debugging-address=127.0.0.1' -PassThru
+          try {
+            node scripts/smoke-portable.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Portable launch smoke failed' }
+            if (-not $p.WaitForExit(30000)) { throw 'Portable launcher did not exit' }
+            if ($p.ExitCode -ne 0) { throw "Portable exit code: $($p.ExitCode)" }
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
+      - name: Checksums and instructions
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release/*-portable.exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content -Encoding ascii "release/$($exe.Name).sha256"
+          Copy-Item PORTABLE-RU.md release/
+          Copy-Item THIRD_PARTY_NOTICES.md release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clippyXam-windows-x64-portable
+          path: |
+            release/*-portable.exe
+            release/*.sha256
+            release/PORTABLE-RU.md
+            release/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke-diagnostics
+          path: |
+            release/*.png
+            test-results/
+          if-no-files-found: ignore

@@ -8,14 +8,34 @@ const {
   shell,
   screen,
   dialog,
+  protocol,
+  net,
+  session,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const { pathToFileURL } = require("node:url");
+const {
+  rendererURL,
+  bundleFile,
+  contentSecurityPolicy,
+  portableDataDirectory,
+} = require("./runtime-policy.cjs");
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "clippyxam",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 const {
   EXTERNAL_URLS,
   fitBounds,
   sanitizePreferences,
-  getDevURL,
   isTrustedFrame,
 } = require("./window-policy.cjs");
 const { createWindowController } = require("./window-controller.cjs");
@@ -33,7 +53,7 @@ const { createPointerController } = require("./pointer-controller.cjs");
 const pointerControllers = new WeakMap();
 const dictation = require("./dictation.cjs").createDictation();
 app.setName("clippyXam");
-if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam.dev");
+if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam");
 
 let win, controller, tray, saveTimer, companion;
 let companionSnapshot = null,
@@ -41,9 +61,22 @@ let companionSnapshot = null,
 let quitting = false;
 let devURL;
 try {
-  devURL = getDevURL(process.env.CLIPPYXAM_DEV_URL);
+  devURL = rendererURL(app.isPackaged, process.env.CLIPPYXAM_DEV_URL);
+  if (app.isPackaged) {
+    const data = portableDataDirectory(
+      process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath("exe")),
+    );
+    fs.mkdirSync(data, { recursive: true });
+    fs.accessSync(data, fs.constants.W_OK);
+    app.setPath("userData", data);
+    app.setPath("sessionData", path.join(data, "session"));
+  }
 } catch (error) {
-  console.error(error.message);
+  dialog.showErrorBox(
+    "clippyXam — запуск",
+    "Не удалось открыть приложение. Перенеси exe в папку с правом записи.\n" +
+      error.message,
+  );
   app.exit(1);
 }
 const iconPath = path.join(__dirname, "icon.png");
@@ -307,7 +340,7 @@ function createCompanionSurface() {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
-      partition: "clippyxam-dev",
+      partition: "clippyxam-memory",
     },
   });
   surface.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -315,6 +348,8 @@ function createCompanionSurface() {
   surface.webContents.on("will-attach-webview", (event) =>
     event.preventDefault(),
   );
+  for (const event of ["hide", "minimize"])
+    surface.on(event, () => dictation.stop(surface.webContents));
   pointerControllers.set(
     surface,
     createPointerController({
@@ -368,7 +403,7 @@ async function createWindow() {
       webSecurity: true,
       spellcheck: false,
       backgroundThrottling: false, // Hidden owner still owns reply/return timers; overlay never duplicates them.
-      partition: "clippyxam-dev", // in-memory session; no persistent API credentials
+      partition: "clippyxam-memory", // in-memory session; no persistent API credentials
     },
   });
   Menu.setApplicationMenu(null);
@@ -410,19 +445,22 @@ async function createWindow() {
     }
   });
   win.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  const origin = new URL(devURL).origin;
-  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    if (new URL(details.url).origin !== origin)
-      return callback({ responseHeaders: details.responseHeaders });
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [
-          `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${origin.replace("http:", "ws:")} https://openrouter.ai https://api.openai.com; media-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`,
-        ],
+  if (!app.isPackaged) {
+    const origin = new URL(devURL).origin;
+    win.webContents.session.webRequest.onHeadersReceived(
+      (details, callback) => {
+        if (new URL(details.url).origin !== origin)
+          return callback({ responseHeaders: details.responseHeaders });
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Content-Security-Policy": [contentSecurityPolicy(false, devURL)],
+          },
+        });
       },
-    });
-  });
+    );
+  }
+
   try {
     tray = new Tray(nativeImage.createFromPath(iconPath));
     tray.setToolTip("clippyXam — помощник с характером");
@@ -445,6 +483,8 @@ async function createWindow() {
   ])
     win.on(event, () => controller.emit());
   for (const event of ["resize", "move"]) win.on(event, scheduleSave);
+  for (const event of ["hide", "minimize"])
+    win.on(event, () => dictation.stop(win.webContents));
   win.on("close", savePreferences);
   win.on("closed", () => {
     quitting = true;
@@ -457,7 +497,7 @@ async function createWindow() {
   win.webContents.on("render-process-gone", () => {
     dialog.showErrorBox(
       "clippyXam",
-      "Интерфейс остановился. Перезапусти npm run desktop:dev.",
+      "Интерфейс остановился. Закрой приложение и запусти его снова.",
     );
     app.quit();
   });
@@ -475,6 +515,30 @@ else {
   app
     .whenReady()
     .then(async () => {
+      if (app.isPackaged) {
+        const root = path.join(__dirname, "..", "dist");
+        session
+          .fromPartition("clippyxam-memory")
+          .protocol.handle("clippyxam", async (request) => {
+            try {
+              if (request.method !== "GET")
+                return new Response("Method not allowed", { status: 405 });
+              const file = bundleFile(request.url, root);
+              const response = await net.fetch(pathToFileURL(file).href);
+              const headers = new Headers(response.headers);
+              headers.set(
+                "Content-Security-Policy",
+                contentSecurityPolicy(true, devURL),
+              );
+              return new Response(response.body, {
+                status: response.status,
+                headers,
+              });
+            } catch {
+              return new Response("Not found", { status: 404 });
+            }
+          });
+      }
       await createWindow();
       for (const event of ["display-removed", "display-metrics-changed"])
         screen.on(event, () => {
@@ -490,7 +554,10 @@ else {
         });
     })
     .catch((error) => {
-      console.error(error.message);
+      dialog.showErrorBox(
+        "clippyXam — ошибка запуска",
+        "Не удалось загрузить окно. Перезапусти приложение.\n" + error.message,
+      );
       app.quit();
       process.exitCode = 1;
     });

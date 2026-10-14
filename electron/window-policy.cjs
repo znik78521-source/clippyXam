@@ -74,7 +74,7 @@ function sanitizePreferences(value) {
 function getDevURL(value) {
   if (!value)
     throw new Error(
-      "Запускай desktop через npm run desktop:dev. Упаковка приложения пока не настроена.",
+      "Для исходников используй npm run desktop:dev; для portable — готовый exe.",
     );
   const url = new URL(value);
   if (
@@ -90,18 +90,26 @@ function getDevURL(value) {
     throw new Error("Desktop может загружать только локальный dev-сервер.");
   return url.href;
 }
-function isTrustedFrame(event, webContents, devURL) {
+function isTrustedFrame(event, webContents, rendererURL) {
   try {
+    const actual = new URL(event.senderFrame.url),
+      expected = new URL(rendererURL);
     return (
       event.sender === webContents &&
       event.senderFrame === webContents.mainFrame &&
-      new URL(event.senderFrame.url).origin === new URL(devURL).origin &&
-      new URL(event.senderFrame.url).pathname === "/"
+      actual.protocol === expected.protocol &&
+      actual.host === expected.host &&
+      actual.pathname === expected.pathname &&
+      !actual.username &&
+      !actual.password &&
+      !actual.hash &&
+      (actual.search === "" || actual.search === "?view=companion")
     );
   } catch {
     return false;
   }
 }
+
 module.exports = {
   MINI_SIZE,
   FULL_SIZE,

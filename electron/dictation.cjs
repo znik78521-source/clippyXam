@@ -97,7 +97,7 @@ function createDictation({
             if (result.error)
               throw new Error(
                 result.error === "no-language"
-                  ? "Установи русский распознаватель речи Windows."
+                  ? "Не найден совместимый русский ru-RU распознаватель System.Speech. Языковой пакет Windows не всегда содержит этот движок."
                   : "Проверь микрофон и разрешение для desktop-приложений в настройках Windows.",
               );
             if (typeof result.text !== "string")

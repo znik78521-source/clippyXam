@@ -69,7 +69,9 @@ try {
     fs.mkdirSync(data, { recursive: true });
     fs.accessSync(data, fs.constants.W_OK);
     app.setPath("userData", data);
-    app.setPath("sessionData", path.join(data, "session"));
+    const sessionData = path.join(data, "session");
+    fs.mkdirSync(sessionData, { recursive: true });
+    app.setPath("sessionData", sessionData);
   }
 } catch (error) {
   dialog.showErrorBox(

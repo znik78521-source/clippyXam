@@ -23,7 +23,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - run: npm run test:packaged
+        timeout-minutes: 4
       - name: Check portable launcher
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $exe = (Get-ChildItem release/*-portable.exe).FullName

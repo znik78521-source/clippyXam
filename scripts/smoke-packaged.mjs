@@ -7,6 +7,7 @@ const executablePath = path.resolve(
 );
 const profile = path.resolve("release/smoke-profile");
 await fs.mkdir(profile, { recursive: true });
+console.log("Launching packaged app:", executablePath);
 const app = await electron.launch({
   executablePath,
   env: {
@@ -16,8 +17,20 @@ const app = await electron.launch({
   },
   timeout: 60000,
 });
+app.context().setDefaultTimeout(15000);
+app
+  .process()
+  .stdout?.on("data", (chunk) =>
+    console.log("[electron stdout]", String(chunk)),
+  );
+app
+  .process()
+  .stderr?.on("data", (chunk) =>
+    console.log("[electron stderr]", String(chunk)),
+  );
 try {
-  const page = await app.firstWindow();
+  const page = await app.firstWindow({ timeout: 30000 });
+  console.log("Owner window created:", page.url());
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await expect(
@@ -67,11 +80,12 @@ try {
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
   await expect(page.locator(".nt-balloon")).toContainText("Проверка portable");
   await page.screenshot({ path: "release/packaged-owner.png" });
+  console.log("Owner onboarding/assets/chat passed; opening widget");
   await page.getByRole("button", { name: "Настройки", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "Виджет на рабочем столе", exact: true })
     .check();
-  const windowPromise = app.waitForEvent("window");
+  const windowPromise = app.waitForEvent("window", { timeout: 30000 });
   await page.getByRole("button", { name: "Применить", exact: true }).click();
   const widget = await windowPromise;
   await expect(
@@ -93,7 +107,7 @@ try {
   await expect(
     page.getByRole("dialog", { name: "Свойства: clippyXam" }),
   ).toBeVisible();
-  const nextWindow = app.waitForEvent("window");
+  const nextWindow = app.waitForEvent("window", { timeout: 30000 });
   await page.getByRole("button", { name: "Отмена", exact: true }).click();
   const restoredWidget = await nextWindow;
   await expect(
@@ -111,6 +125,28 @@ try {
   console.log(
     "Packaged Windows smoke passed: production scheme/assets, onboarding, mocked chat, widget/settings/restore, portable profile.",
   );
+} catch (error) {
+  console.error("Packaged smoke failed:", error);
+  for (const [i, page] of app.windows().entries()) {
+    await page
+      .screenshot({ path: `release/failed-${i}.png`, timeout: 5000 })
+      .catch(() => {});
+    console.error(
+      "Window",
+      i,
+      page.url(),
+      await page
+        .locator("body")
+        .innerText({ timeout: 5000 })
+        .catch(() => "unreadable"),
+    );
+  }
+  throw error;
 } finally {
-  await app.close();
+  const killTimer = setTimeout(() => app.process().kill(), 10000);
+  try {
+    await app.close();
+  } finally {
+    clearTimeout(killTimer);
+  }
 }

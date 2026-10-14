@@ -14,7 +14,7 @@ export interface SettingsData {
   model: string;
   voice: string;
   rate: number;
-  ttsProvider: "system" | "openai";
+  ttsProvider: "system" | "openai" | "local";
   ttsKey: string;
   systemVoices: Record<CharacterId, string>;
   cloudVoices: Record<CharacterId, string>;
@@ -25,9 +25,11 @@ export default function Settings({
   voices,
   onSave,
   onClose,
+  localVoiceState,
 }: {
   settings: SettingsData;
   voices: SpeechSynthesisVoice[];
+  localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
   onSave: (data: SettingsData) => void;
   onClose: () => void;
 }) {
@@ -261,6 +263,11 @@ export default function Settings({
               })
             }
           >
+            {window.clippyDesktop?.synthesizeLocalVoice && (
+              <option value="local">
+                Piper Denis — русский, локально и бесплатно
+              </option>
+            )}
             <option value="system">Системный голос — без API-ключа</option>
             <option value="openai">OpenAI TTS — платный API</option>
           </select>
@@ -290,49 +297,80 @@ export default function Settings({
               </div>
             </>
           )}
-          {characters.map((character) => (
-            <div key={character.id}>
-              <label className="field-label" htmlFor={`voice-${character.id}`}>
-                {character.name}
-              </label>
-              <select
-                id={`voice-${character.id}`}
-                value={
-                  (draft.ttsProvider === "system"
-                    ? draft.systemVoices
-                    : draft.cloudVoices)[character.id]
-                }
-                onChange={(event) => {
-                  const field =
-                    draft.ttsProvider === "system"
-                      ? "systemVoices"
-                      : "cloudVoices";
-                  setDraft({
-                    ...draft,
-                    [field]: {
-                      ...draft[field],
-                      [character.id]: event.target.value,
-                    },
-                  });
-                }}
-              >
-                {draft.ttsProvider === "system" ? (
-                  <>
-                    <option value="">Русский голос / общий по умолчанию</option>
-                    {voices.map((voice) => (
-                      <option key={voice.voiceURI} value={voice.voiceURI}>
-                        {voice.name} · {voice.lang}
+          {draft.ttsProvider === "local" && (
+            <p className="field-help">
+              Русский голос скачивается автоматически один раз (63 МБ) с Hugging
+              Face. Далее работает без сети и без голосов Windows. Текст никуда
+              не отправляется. Один голос Denis для всех персонажей.
+              <br />
+              {localVoiceState?.phase === "ready"
+                ? "Голос готов."
+                : localVoiceState?.phase === "downloading"
+                  ? `Загрузка: ${localVoiceState.progress}%`
+                  : localVoiceState?.error || "Подготовка голоса…"}
+              {localVoiceState?.phase === "error" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void window.clippyDesktop
+                      ?.prepareLocalVoice?.()
+                      .catch(() => {})
+                  }
+                >
+                  Повторить загрузку
+                </button>
+              )}
+            </p>
+          )}
+          {draft.ttsProvider !== "local" &&
+            characters.map((character) => (
+              <div key={character.id}>
+                <label
+                  className="field-label"
+                  htmlFor={`voice-${character.id}`}
+                >
+                  {character.name}
+                </label>
+                <select
+                  id={`voice-${character.id}`}
+                  value={
+                    (draft.ttsProvider === "system"
+                      ? draft.systemVoices
+                      : draft.cloudVoices)[character.id]
+                  }
+                  onChange={(event) => {
+                    const field =
+                      draft.ttsProvider === "system"
+                        ? "systemVoices"
+                        : "cloudVoices";
+                    setDraft({
+                      ...draft,
+                      [field]: {
+                        ...draft[field],
+                        [character.id]: event.target.value,
+                      },
+                    });
+                  }}
+                >
+                  {draft.ttsProvider === "system" ? (
+                    <>
+                      <option value="">
+                        Русский голос / общий по умолчанию
                       </option>
-                    ))}
-                  </>
-                ) : (
-                  ["alloy", "echo", "fable", "onyx", "nova", "shimmer"].map(
-                    (voice) => <option key={voice}>{voice}</option>,
-                  )
-                )}
-              </select>
-            </div>
-          ))}
+                      {voices.map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI}>
+                          {voice.name} · {voice.lang}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    ["alloy", "echo", "fable", "onyx", "nova", "shimmer"].map(
+                      (voice) => <option key={voice}>{voice}</option>,
+                    )
+                  )}
+                </select>
+              </div>
+            ))}
           <div hidden={draft.ttsProvider !== "system"}>
             <label className="field-label" htmlFor="voice">
               Общий голос по умолчанию

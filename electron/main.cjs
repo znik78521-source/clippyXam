@@ -13,7 +13,9 @@ const {
   session,
 } = require("electron");
 // Preserve the cause in CI/stderr before Electron opens its native error box.
-process.on("uncaughtExceptionMonitor", (error) => console.error("Main process failure:", error));
+process.on("uncaughtExceptionMonitor", (error) =>
+  console.error("Main process failure:", error),
+);
 const path = require("node:path");
 const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
@@ -57,7 +59,7 @@ const dictation = require("./dictation.cjs").createDictation();
 app.setName("clippyXam");
 if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam");
 
-let win, controller, tray, saveTimer, companion;
+let win, controller, tray, saveTimer, companion, localVoice;
 let companionSnapshot = null,
   companionBounds = null;
 let quitting = false;
@@ -216,6 +218,15 @@ function installIPC() {
       win.close();
     },
   };
+  handlers["voice:state"] = () => localVoice.state();
+  handlers["voice:prepare"] = () => localVoice.prepare();
+  handlers["voice:stop"] = () => localVoice.stop(win.webContents);
+  // Only the trusted owner can synthesize; the passive widget never owns TTS.
+  ipcMain.handle("voice:synthesize", (event, text, rate) => {
+    if (!win || !isTrustedFrame(event, win.webContents, devURL))
+      throw new Error("Untrusted voice command");
+    return localVoice.synthesize(event.sender, text, rate);
+  });
   for (const [channel, handler] of Object.entries(handlers))
     ipcMain.handle(channel, (event, value) => {
       if (!win || !isTrustedFrame(event, win.webContents, devURL))
@@ -494,6 +505,7 @@ async function createWindow() {
   win.on("closed", () => {
     quitting = true;
     dictation.stop();
+    localVoice?.dispose();
     companion?.dispose();
     win = null;
     app.quit();
@@ -544,7 +556,20 @@ else {
             }
           });
       }
+      localVoice = require("./local-voice.cjs").createLocalVoice({
+        baseDir: path.join(app.getPath("userData"), "voices", "denis-v1"),
+        engineDir: app.isPackaged
+          ? path.join(process.resourcesPath, "voice-engine")
+          : path.join(__dirname, "..", "voice-engine", "runtime"),
+        fetchImpl: (...args) => net.fetch(...args),
+        changed: (state) => {
+          if (win && !win.isDestroyed())
+            win.webContents.send("voice:state-changed", state);
+        },
+      });
       await createWindow();
+      if (app.isPackaged && process.platform === "win32")
+        void localVoice.prepare().catch(() => {});
       for (const event of ["display-removed", "display-metrics-changed"])
         screen.on(event, () => {
           if (win && !win.isDestroyed()) controller.repairBounds();
@@ -569,6 +594,7 @@ else {
   app.on("before-quit", () => {
     quitting = true;
     dictation.stop();
+    localVoice?.dispose();
     companion?.dispose();
     clearTimeout(saveTimer);
     savePreferences();

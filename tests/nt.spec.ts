@@ -66,7 +66,7 @@ test("Enter submits exactly once to free route with zero-price limits and no lea
   await page.route(endpoint, async (route) => {
     calls++;
     const body = route.request().postDataJSON();
-    expect(body.model).toBe("openrouter/free");
+    expect(body.model).toBe("liquid/lfm-2.5-2.6b:free");
     expect(body.provider).toEqual({
       sort: "latency",
       max_price: { prompt: 0, completion: 0 },
@@ -388,4 +388,59 @@ test("entire composer fits smallest supported size", async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(
     400,
   );
+});
+test("empty completion recovers once, truncated JSON is shown as dialogue only", async ({
+  page,
+}) => {
+  let calls = 0;
+  await page.route(endpoint, (route) => {
+    calls++;
+    return route.fulfill({
+      json: {
+        choices: [
+          {
+            message: {
+              content:
+                calls === 1
+                  ? ""
+                  : '{"text":"Ты спросил, о чём мы говорили, так',
+            },
+          },
+        ],
+      },
+    });
+  });
+  await connect(page);
+  await send(page, "Привет");
+  await expect(page.locator(".nt-balloon")).toContainText("Ты спросил");
+  await expect(page.locator(".nt-balloon")).not.toContainText('{"text"');
+  expect(calls).toBe(2);
+});
+test("peeking uses its own authored timeline and gesture behind the edge", async ({
+  page,
+}) => {
+  let calls = 0;
+  await page.route(endpoint, (route) =>
+    route.fulfill({
+      json: response(
+        ++calls === 1 ? "Ушёл" : "Отвернись, мудила.",
+        calls === 1 ? "offended" : "rude",
+        calls === 1 ? 25 : 0,
+      ),
+    }),
+  );
+  await connect(page);
+  await page.clock.install();
+  await send(page, "Уйди");
+  await expect(page.locator(".nt-balloon")).toContainText("Ушёл");
+  await page.clock.runFor(2000);
+  await send(page, "Ты где?");
+  await expect(page.locator('[data-animation="peek-from-edge"]')).toBeVisible();
+  expect(
+    await page
+      .locator(".peek-active")
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe("peek-from-edge");
+  await expect(page.locator(".peek-active .rude-hand")).toHaveCount(1);
+  await expect(page.locator(".nt-balloon")).toContainText("Отвернись");
 });

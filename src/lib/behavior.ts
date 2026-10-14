@@ -22,10 +22,17 @@ export function chooseAside(
   intensity: Intensity,
   random = Math.random,
 ) {
+  const pool =
+    intensity === "wild"
+      ? [
+          ...asides[id],
+          "Отвернись, мудила. Я тут вообще-то прячусь.",
+          "Чего уставился? Делай вид, что работаешь.",
+          "Я не вернулся. Проверяю, не заебал ли ты кого-нибудь ещё.",
+        ]
+      : asides[id];
   const text =
-    asides[id][
-      Math.min(asides[id].length - 1, Math.floor(random() * asides[id].length))
-    ];
+    pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
   return {
     text,
     rude:
@@ -51,10 +58,16 @@ export function requestsGentle(text: string) {
 export function nextIrritation(current: number, text: string) {
   if (isApology(text) || requestsGentle(text)) return Math.max(0, current - 40);
   if (/спасибо|молодец|хороший/i.test(text)) return Math.max(0, current - 20);
-  const delta = /тупой|идиот|бесишь|заткнись|отстань/i.test(text)
+  const delta = isInsult(text)
     ? 28
     : /срочно|быстрее|немедленно/i.test(text)
       ? 14
       : -3;
   return Math.max(0, Math.min(100, current + delta));
+}
+
+export function isInsult(text: string) {
+  return /тупой|идиот|бесишь|заткнись|отстань|нахуй|на хуй|заеб|муд[аи]|пош[её]л|сука|долбо[её]б/i.test(
+    text,
+  );
 }

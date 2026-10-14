@@ -71,7 +71,9 @@ try {
   await page.route(
     "https://openrouter.ai/api/v1/chat/completions",
     async (route) => {
-      expect(route.request().postDataJSON().model).toBe("openrouter/free");
+      expect(route.request().postDataJSON().model).toBe(
+        "liquid/lfm-2.5-2.6b:free",
+      );
       await route.fulfill({
         json: {
           choices: [

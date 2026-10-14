@@ -34,3 +34,10 @@ The middle-finger SVG overlay, CSS departure/peek transitions, favicon, tray ico
 - Playwright — Apache-2.0, Microsoft Corporation.
 
 Full package licences remain available with the dependencies in `node_modules`. Runtime code and artwork have separate licensing considerations as described above.
+
+
+## Piper / русский голос Denis (0.4.0)
+
+Piper 2023.11.14-2 вызывается отдельным процессом из portable, без установки в Windows. Код Piper — MIT (Michael Hansen); https://github.com/rhasspy/piper/tree/2023.11.14-2 . Поставляемый runtime содержит собственные библиотеки и eSpeak NG (GPLv3); лицензия eSpeak NG и ссылки на исходники добавляются рядом с runtime при сборке. Исходники компонентов: https://github.com/rhasspy/piper-phonemize и https://github.com/espeak-ng/espeak-ng ; ONNX Runtime — MIT, https://github.com/microsoft/onnxruntime . Не объявляем все сторонние компоненты лицензированными под MIT.
+
+Голос ru_RU-denis-medium скачивается с публичного https://huggingface.co/rhasspy/piper-voices/ по закреплённой ревизии c10ece1aade47bb51c153c893d14e5bf8e5b7117. Репозиторий указывает MIT, MODEL_CARD данного голоса указывает датасет CC0: https://github.com/OHF-Voice/voice-datasets . Модель 63 201 294 байта проверяется по SHA-256 15fab56e11a097858ee115545d0f697fc2a316c41a291a5362349fb870411b0a; config и MODEL_CARD — по Git blob hashes. Текст пользователя не передаётся на сервер скачивания. Голос не является оригинальным голосом персонажей Microsoft или клоном пользователя.

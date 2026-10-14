@@ -24,6 +24,16 @@ jobs:
       - run: npm run portable:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Test real Russian offline speech
+        timeout-minutes: 7
+        shell: pwsh
+        run: |
+          node scripts/smoke-voice.mjs 2>&1 | Tee-Object -FilePath release/voice-smoke.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/voice-smoke.log -Tail 40) -join "%0A")
+            Write-Output "::error title=Russian voice smoke::$detail"
+            exit 1
+          }
       - name: Checksums and instructions
         shell: pwsh
         run: |
@@ -47,21 +57,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = 'v0.3.0-portable'
+          $tag = 'v0.4.0-portable'
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $sha = (Get-ChildItem release/*.exe.sha256).FullName
           $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           $notes = @"
           ## Portable для Windows 10/11 x64 — без установщика
-          Скачайте **clippyXam-0.3.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+          Скачайте **clippyXam-0.4.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
 
-          Серый NT-интерфейс, Clippy/Rover/Merlin, бесплатный маршрут OpenRouter, настройки виджета, системная озвучка и экспериментальный голосовой ввод.
+          Исправлены пустые и обрезанные ответы/JSON в облачке. По умолчанию Liquid LFM2.5-2.6B :free, отключено рассуждение, один повтор при пустом ответе. Хамский режим по умолчанию; отдельная анимация выглядывания и жеста.
+
+          Встроенная русская озвучка Piper/Denis включена по умолчанию: автоматически скачивает 63 МБ с Hugging Face при первом запуске, далее работает локально без голосов Windows/ключей/платных API. Для первого скачивания нужен интернет. Голос сохраняется в clippyXam-data/voices. Возможен повтор загрузки в настройках. Это озвучка ответа, а не распознавание микрофона.
 
           Рядом с exe создаётся clippyXam-data. Ключ OpenRouter вводится при запуске и хранится только в памяти. Бесплатные модели имеют лимиты; платного fallback нет. OpenAI TTS — отдельная явно платная опция.
 
           **Без цифровой подписи:** возможны предупреждения SmartScreen. Не отключайте защиту вслепую. Для микрофона нужен совместимый ru-RU System.Speech recognizer; запасной путь — поле ввода и Win+H. Реальный микрофон/голоса, GPU/DPI и многомониторность на машине пользователя ещё требуют проверки.
 
-          Сборка для ручного тестирования, не стабильный релиз. На Windows runner прошли проверки типов, логики и контроллеров; exe собран. Полная автоматическая проверка запуска именно этого бинарника ещё не подтверждена. Живые API, микрофон и голоса не тестировались. Возможны ошибки интерфейса и виджета.
+          Сборка для ручного тестирования, не стабильный релиз. На Windows runner прошли проверки типов, логики и контроллеров, а также настоящий синтез русского WAV движком Piper; exe собран. Полная автоматическая проверка запуска именно этого бинарника ещё не подтверждена. Живые API, микрофон и голоса не тестировались. Возможны ошибки интерфейса и виджета.
 
           SHA-256: $digest
           Commit: ${{ github.sha }}
@@ -70,7 +82,7 @@ jobs:
           $notes | Set-Content -Encoding utf8 release/release-notes.md
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.3.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.4.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - run: npx playwright install chromium
       - run: npm run test:e2e -- --workers=2
@@ -122,5 +134,6 @@ jobs:
           path: |
             release/*.png
             release/*smoke.log
+            release/russian-voice-test.wav
             test-results/
           if-no-files-found: ignore

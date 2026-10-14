@@ -11,7 +11,17 @@ export interface DesktopState {
   trayAvailable?: boolean;
   companion?: boolean;
 }
+export interface LocalVoiceState {
+  phase: "idle" | "downloading" | "ready" | "error";
+  progress: number;
+  error: string;
+}
 export interface DesktopBridge extends DictationBridge {
+  localVoiceState?(): Promise<LocalVoiceState>;
+  prepareLocalVoice?(): Promise<LocalVoiceState>;
+  synthesizeLocalVoice?(text: string, rate: number): Promise<Uint8Array | null>;
+  stopLocalVoice?(): Promise<void>;
+  onLocalVoiceState?(callback: (state: LocalVoiceState) => void): () => void;
   readonly platform: string;
   getState(): Promise<DesktopState>;
   setCompanion(value: boolean): Promise<DesktopState>;

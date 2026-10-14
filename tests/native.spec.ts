@@ -136,3 +136,83 @@ test("passive widget keeps grey caption controls and relays settings without a s
     { type: "close" },
   ]);
 });
+test("local Russian voice is selected and enabled without Windows speech voices", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = {
+      mini: true,
+      companion: false,
+      alwaysOnTop: true,
+      maximized: false,
+      minimized: false,
+      focused: true,
+    };
+    const spoken: string[] = [];
+    Object.assign(window, { __localSpoken: spoken });
+    window.clippyDesktop = {
+      platform: "win32",
+      getState: async () => state,
+      onState: () => () => {},
+      setCompanion: async () => state,
+      publishCompanion: () => {},
+      onCompanionAction: () => () => {},
+      setMini: async () => state,
+      setAlwaysOnTop: async () => state,
+      minimize: async () => state,
+      toggleMaximize: async () => state,
+      hideToTray: async () => state,
+      close: async () => {},
+      startDictation: async () => "",
+      stopDictation: async () => {},
+      localVoiceState: async () => ({
+        phase: "ready",
+        progress: 100,
+        error: "",
+      }),
+      onLocalVoiceState: () => () => {},
+      synthesizeLocalVoice: async (text) => {
+        spoken.push(text);
+        return new Uint8Array([1, 2, 3]);
+      },
+      stopLocalVoice: async () => {},
+    };
+    Object.defineProperty(window, "Audio", {
+      value: class {
+        onplaying: any;
+        onended: any;
+        onerror: any;
+        play() {
+          this.onplaying?.();
+          queueMicrotask(() => this.onended?.());
+          return Promise.resolve();
+        }
+        pause() {}
+        removeAttribute() {}
+        load() {}
+      },
+      configurable: true,
+    });
+  });
+  await page.route("https://openrouter.ai/api/v1/chat/completions", (route) =>
+    route.fulfill({
+      json: {
+        choices: [{ message: { content: "Русская озвучка работает." } }],
+      },
+    }),
+  );
+  await page.goto("/");
+  await page.getByLabel("API-ключ OpenRouter").fill("fake");
+  await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).fill("Привет");
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__localSpoken))
+    .toEqual(["Русская озвучка работает."]);
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByRole("tab", { name: "Голос", exact: true }).click();
+  await expect(page.getByLabel("Провайдер голоса")).toHaveValue("local");
+  await expect(
+    page.getByRole("checkbox", { name: "Озвучивать ответы", exact: true }),
+  ).toBeChecked();
+});

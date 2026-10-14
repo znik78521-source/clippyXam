@@ -2,7 +2,7 @@ import type { CharacterId } from "./characters";
 import { wordRange } from "./speech-progress";
 import type { SpeechProgress } from "./speech-progress";
 export interface VoiceOptions {
-  provider: "system" | "openai";
+  provider: "system" | "openai" | "local";
   key: string;
   voice: string;
   rate: number;
@@ -252,6 +252,29 @@ export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
       });
       return;
     }
+    if (options.provider === "local") {
+      const bridge = window.clippyDesktop;
+      if (!bridge?.synthesizeLocalVoice)
+        throw new Error(
+          "Локальный русский голос доступен в portable-приложении.",
+        );
+      const abort = () => {
+        void bridge.stopLocalVoice?.().catch(() => {});
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        const bytes = await bridge.synthesizeLocalVoice(text, options.rate);
+        if (signal.aborted || !bytes) return;
+        await playAudio(
+          new Blob([new Uint8Array(bytes)], { type: "audio/wav" }),
+          signal,
+          started,
+        );
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+      return;
+    }
     const key = JSON.stringify([options.voice, options.rate, text]); // Never include API keys.
     let blob = cache.get(key);
     if (!blob) {
@@ -280,43 +303,46 @@ export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
         signal.removeEventListener("abort", abort);
       }
     }
-    if (signal.aborted) return;
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        let settled = false;
-        const finish = (error?: Error) => {
-          if (settled) return;
-          settled = true;
-          signal.removeEventListener("abort", abort);
-          audio.onplaying = audio.onended = audio.onerror = null;
-          error ? reject(error) : resolve();
-        };
-        const abort = () => {
-          audio.pause();
-          finish();
-        };
-        signal.addEventListener("abort", abort, { once: true });
-        audio.onplaying = started;
-        audio.onended = () => finish();
-        audio.onerror = () =>
-          finish(new Error("Не удалось воспроизвести аудио."));
-        audio
-          .play()
-          .catch(() =>
-            finish(
-              new Error(
-                "Браузер заблокировал воспроизведение. Нажми кнопку озвучки ещё раз.",
-              ),
-            ),
-          );
-      });
-    } finally {
-      audio.pause();
-      audio.removeAttribute("src");
-      audio.load();
-      URL.revokeObjectURL(url);
-    }
+    await playAudio(blob, signal, started);
   };
+}
+async function playAudio(blob: Blob, signal: AbortSignal, started: () => void) {
+  if (signal.aborted) return;
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", abort);
+        audio.onplaying = audio.onended = audio.onerror = null;
+        error ? reject(error) : resolve();
+      };
+      const abort = () => {
+        audio.pause();
+        finish();
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      audio.onplaying = started;
+      audio.onended = () => finish();
+      audio.onerror = () =>
+        finish(new Error("Не удалось воспроизвести аудио."));
+      audio
+        .play()
+        .catch(() =>
+          finish(
+            new Error(
+              "Браузер заблокировал воспроизведение. Нажми кнопку озвучки ещё раз.",
+            ),
+          ),
+        );
+    });
+  } finally {
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    URL.revokeObjectURL(url);
+  }
 }

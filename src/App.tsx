@@ -30,6 +30,7 @@ import {
   isQuietTime,
 } from "./lib/preferences";
 
+const localVoiceAvailable = Boolean(window.clippyDesktop?.synthesizeLocalVoice);
 const time = () =>
   new Date().toLocaleTimeString("ru-RU", {
     hour: "2-digit",
@@ -53,19 +54,19 @@ export default function App() {
 
   const [phase, setPhase] = useState<Mood>("idle");
   const [bubble, setBubble] = useState(characters[0].quip);
-  const [intensity, setIntensity] = useState<Intensity>("normal");
-  const [sound, setSound] = useState(false);
+  const [intensity, setIntensity] = useState<Intensity>("wild");
+  const [sound, setSound] = useState(localVoiceAvailable);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useState<SettingsData>({
     character: "clippy",
-    intensity: "normal",
-    sound: false,
+    intensity: "wild",
+    sound: localVoiceAvailable,
     widget: false,
     key: "",
     model: DEFAULT_MODEL,
     voice: "",
     rate: 1,
-    ttsProvider: "system",
+    ttsProvider: localVoiceAvailable ? "local" : "system",
     ttsKey: "",
     systemVoices: { ...defaultVoiceMap },
     cloudVoices: { ...defaultCloudVoices },
@@ -83,6 +84,26 @@ export default function App() {
       desktop.setCompanion(false);
   }, [desktop.state.companion, settings.key]);
   const speech = useSpeech(setToast);
+  const [voiceState, setVoiceState] = useState<
+    import("./lib/desktop").LocalVoiceState | null
+  >(null);
+  useEffect(() => {
+    const bridge = window.clippyDesktop;
+    if (!bridge?.localVoiceState) return;
+    let active = true;
+    const update = (value: import("./lib/desktop").LocalVoiceState) => {
+      if (active) setVoiceState(value);
+    };
+    const off = bridge.onLocalVoiceState?.(update);
+    void bridge
+      .localVoiceState()
+      .then(update)
+      .catch(() => {});
+    return () => {
+      active = false;
+      off?.();
+    };
+  }, []);
   const [, setIrritation] = useState(0);
   const irritationRef = useRef(0);
   const threads = useRef<
@@ -295,6 +316,12 @@ export default function App() {
           history,
           signal: controller.signal,
           away: awayRef.current > Date.now(),
+          onRetry: () => {
+            if (id === requestId.current)
+              setBubble(
+                "Модель промолчала. Один повтор — без платного маршрута…",
+              );
+          },
         });
       }
       if (id !== requestId.current) return;
@@ -308,7 +335,7 @@ export default function App() {
           text:
             effectiveIntensity === "soft"
               ? "Мне нужна небольшая пауза. Скоро вернусь."
-              : "Моё терпение закончилось раньше твоего списка требований. Возьму паузу.",
+              : "Заебал. Пойду за край окна — отдохну от твоего таланта раздражать.",
           mood: "offended",
           leaveSeconds: 20,
         };
@@ -410,7 +437,7 @@ export default function App() {
       speak(aside.text);
       later(
         () => setPhase(awayRef.current > Date.now() ? "away" : "idle"),
-        2800,
+        4000,
       );
     }, delay);
     return () => clearTimeout(timer);
@@ -476,7 +503,13 @@ export default function App() {
       ? { start: spokenRange.start, end: spokenRange.end }
       : null,
     error,
-    notice: toast,
+    notice:
+      toast ||
+      (settings.ttsProvider === "local" && voiceState?.phase === "downloading"
+        ? `Скачивается русский голос: ${voiceState.progress}% (63 МБ, один раз)`
+        : settings.ttsProvider === "local" && voiceState?.phase === "error"
+          ? voiceState.error
+          : ""),
     pending,
     sound,
     speechBusy: speech.busy,
@@ -565,6 +598,8 @@ export default function App() {
     speech.progress,
     speech.busy,
     speech.speaking,
+    voiceState,
+    settings.ttsProvider,
   ]);
 
   function saveSettings(value: SettingsData) {
@@ -631,6 +666,7 @@ export default function App() {
                 (desktop.native ? Boolean(desktop.state.companion) : floating),
             }}
             voices={voices}
+            localVoiceState={voiceState}
             onSave={saveSettings}
             onClose={() => {
               setModal(null);

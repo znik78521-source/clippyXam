@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Settings, Minus, X, Maximize2 } from "lucide-react";
 import Mascot from "./Mascot";
+import PeekAnimation from "./PeekAnimation";
 import SpeechText from "./SpeechText";
 import { RudeHand } from "./Icons";
 import { useDictation } from "../lib/useDictation";
@@ -139,14 +140,22 @@ export function CompanionScene({
           )}
         </div>
         <div className="nt-actor" data-companion-hit>
-          <Mascot
-            id={snapshot.character}
-            mood={snapshot.animationMood}
-            size={snapshot.character === "clippy" ? 205 : 176}
-          />
-          {snapshot.phase === "rude" && (
-            <RudeHand character={snapshot.character} />
-          )}
+          <PeekAnimation
+            active={
+              snapshot.phase === "peeking" ||
+              (snapshot.phase === "rude" && snapshot.away)
+            }
+            rude={snapshot.phase === "rude"}
+          >
+            <Mascot
+              id={snapshot.character}
+              mood={snapshot.animationMood}
+              size={snapshot.character === "clippy" ? 205 : 176}
+            />
+            {snapshot.phase === "rude" && (
+              <RudeHand character={snapshot.character} />
+            )}
+          </PeekAnimation>
         </div>
       </div>
       <footer className="nt-composer" data-companion-hit>

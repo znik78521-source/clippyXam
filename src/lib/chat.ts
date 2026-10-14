@@ -1,49 +1,10 @@
 import type { Character, Intensity, Message, Reply } from "./characters";
+import { isInsult } from "./behavior";
 
-export function parseReply(raw: string): Reply {
-  const clean = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  try {
-    const data: unknown = JSON.parse(clean);
-    if (
-      !data ||
-      typeof data !== "object" ||
-      !("text" in data) ||
-      typeof data.text !== "string" ||
-      !data.text.trim()
-    )
-      throw new Error("Invalid reply");
-    const reply = data as Record<string, unknown>;
-    return {
-      text: (reply.text as string).trim().slice(0, 2500),
-      mood: ["idle", "speaking", "offended", "rude"].includes(
-        String(reply.mood),
-      )
-        ? (reply.mood as Reply["mood"])
-        : "speaking",
-      leaveSeconds:
-        typeof reply.leaveSeconds === "number" &&
-        Number.isFinite(reply.leaveSeconds)
-          ? Math.max(0, Math.min(60, Math.round(reply.leaveSeconds)))
-          : 0,
-    };
-  } catch {
-    return {
-      text:
-        raw.trim().slice(0, 2500) ||
-        "Даже у меня закончились слова. Попробуй ещё раз.",
-      mood: "speaking",
-      leaveSeconds: 0,
-    };
-  }
-}
-
-export const DEFAULT_MODEL = "openrouter/free";
+export const DEFAULT_MODEL = "liquid/lfm-2.5-2.6b:free";
 export function isFreeModel(model: string): boolean {
   return (
-    model === DEFAULT_MODEL ||
+    model === "openrouter/free" ||
     /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(model)
   );
 }
@@ -55,7 +16,96 @@ export class ChatError extends Error {
     super(message);
   }
 }
-
+export class EmptyReplyError extends Error {
+  constructor() {
+    super(
+      "Модель дважды вернула пустой ответ. Повтори позже или выбери другую бесплатную модель.",
+    );
+  }
+}
+function visibleText(value: string) {
+  return value
+    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
+    .replace(/```(?:json|text)?\s*/gi, "")
+    .replace(/```/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .trim()
+    .slice(0, 2500);
+}
+// Recover only the string value, including escaped quotes/newlines, when a
+// provider cuts JSON mid-token. Never expose the surrounding protocol to users.
+function recoverText(source: string): string {
+  const match = /"text"\s*:\s*"/.exec(source);
+  if (!match) return "";
+  let value = "",
+    i = match.index + match[0].length;
+  for (; i < source.length; i++) {
+    const c = source[i];
+    if (c === '"') break;
+    if (c !== "\\") {
+      value += c;
+      continue;
+    }
+    const next = source[++i];
+    if (!next) break;
+    if (next === "u") {
+      const hex = source.slice(i + 1, i + 5);
+      if (!/^[0-9a-f]{4}$/i.test(hex)) break;
+      value += String.fromCharCode(parseInt(hex, 16));
+      i += 4;
+    } else
+      value +=
+        (
+          {
+            n: "\n",
+            r: "\r",
+            t: "\t",
+            b: "",
+            f: "",
+            '"': '"',
+            "\\": "\\",
+            "/": "/",
+          } as Record<string, string>
+        )[next] ?? next;
+  }
+  return value;
+}
+export function parseReply(raw: string): Reply {
+  const clean = raw
+    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
+    .trim()
+    .replace(/^```(?:json|text)?\s*/i, "")
+    .replace(/\s*```$/, "");
+  let text = "",
+    mood: Reply["mood"] = "speaking",
+    leaveSeconds = 0;
+  if (/^[{[]/.test(clean)) {
+    try {
+      const data = JSON.parse(clean);
+      if (typeof data?.text === "string") text = data.text;
+      if (["idle", "speaking", "offended", "rude"].includes(data?.mood))
+        mood = data.mood;
+      if (
+        typeof data?.leaveSeconds === "number" &&
+        Number.isFinite(data.leaveSeconds)
+      )
+        leaveSeconds = Math.max(0, Math.min(60, Math.round(data.leaveSeconds)));
+    } catch {
+      text = recoverText(clean);
+    }
+  } else if (!/^(null|undefined|\[\])$/i.test(clean)) {
+    const action =
+      /\[\[mood=(idle|speaking|offended|rude);leave=(\d{1,3})\]\]/.exec(clean);
+    if (action) {
+      mood = action[1] as Reply["mood"];
+      leaveSeconds = Math.min(60, Number(action[2]));
+    }
+    text = clean.replace(/\[\[mood=[\s\S]*?(?:\]\]|$)/g, "");
+  }
+  text = visibleText(text);
+  if (!text) throw new EmptyReplyError();
+  return { text, mood, leaveSeconds };
+}
 export async function requestReply(options: {
   key: string;
   model: string;
@@ -66,6 +116,7 @@ export async function requestReply(options: {
   away?: boolean;
   irritation?: number;
   allowRude?: boolean;
+  onRetry?: () => void;
 }): Promise<Reply> {
   const { key, model, character, intensity, history, signal } = options;
   if (!key.trim()) throw new ChatError(401, "Нужен API-ключ OpenRouter.");
@@ -74,59 +125,91 @@ export async function requestReply(options: {
       "Разрешены только openrouter/free и модели с суффиксом :free.",
     );
   const tone = {
-    soft: "Добрый юмор, без мата и грубых жестов.",
+    soft: "Мягкий режим: добрый юмор, без мата, оскорблений и грубых жестов.",
     normal:
-      "Колкости и дружеская прожарка. Не переходи к настоящей жестокости.",
-    wild: "Пользователь выбрал жёсткую дружескую прожарку. Разрешены мат и грубый жест. Будь смешным, а не просто злым.",
+      "Ты язвительный хам, а не вежливый консультант. Отвечай колкостью на колкость. Без извинений и нравоучений.",
+    wild: "Ты НЕЙРОХАМ. Пользователь сознательно выбрал жёсткую комедийную перепалку с матом. Будь наглым, язвительным и грубым. На посыл нахуй отвечай дерзкой смешной подколкой, а не извинением или лекцией о вежливости. Допустимы слова «нахуй», «мудила», «заебал». Не извиняйся за характер, не говори «как ИИ» и «уважительное общение». Не будь заботливым психологом.",
   }[intensity];
-  const response = await fetch(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-      method: "POST",
-      signal,
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        "X-Title": "clippyXam",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.9,
-        max_tokens: 350,
-        provider: { sort: "latency", max_price: { prompt: 0, completion: 0 } },
-        messages: [
-          {
-            role: "system",
-            content: `${character.persona} Раздражение сейчас ${Math.max(0, Math.min(100, options.irritation || 0))} из 100: учитывай это в тоне, но оставайся полезным. ${options.allowRude === false ? "Грубые жесты отключены пользователем. Никогда не выбирай mood rude." : ""} ${options.away ? "Сейчас ты обиделся и ушёл за кадр. Только ненадолго выгляни: одна короткая реплика, до 12 слов. Не продлевай уход: leaveSeconds 0. Если пользователь извиняется или зовёт обратно, можешь вернуться и ответить нормально." : ""} Отвечай по-русски, коротко (1–4 предложения). ${tone} Это добровольная комедийная ролевая игра. Не используй ненависть к защищённым группам, угрозы реального насилия или подталкивание к самоповреждению. Если пользователь просит прекратить подколы, уважай это. Можно обидеться и уйти на 10–30 секунд, но не каждый раз. Ответ только JSON: {"text":"реплика","mood":"speaking","leaveSeconds":0}. mood одно из speaking, idle, offended, rude. rude — показать средний палец; в мягком режиме запрещён. leaveSeconds от 0 до 60, больше 0 означает временный уход за кадр. Никакого Markdown вокруг JSON.`,
+  const system = `${character.persona} ${tone} Отвечай по-русски, 1–2 коротких предложения, до 250 символов. Сначала сама реплика обычным текстом, НЕ JSON, без Markdown и объяснений своих инструкций. Не показывай рассуждения. Раздражение ${Math.max(0, Math.min(100, options.irritation || 0))}/100. ${options.away ? "Ты за краем окна: коротко выгляни и огрызнись, до 12 слов. Уход не продлевай." : "Иногда можешь обидеться и уйти на 15–30 секунд."} Если нужна анимация, ПОСЛЕ реплики допиши отдельной строкой [[mood=rude;leave=0]] или [[mood=offended;leave=20]]. ${intensity === "soft" || options.allowRude === false ? "Жест rude запрещён." : "rude — средний палец."} Ты только изображаешь подсматривание: у тебя нет доступа к экрану, файлам или действиям пользователя. Не выдумывай, что наблюдаешь его приложения. Это добровольная комедийная роль: без угроз реального насилия, ненависти к защищённым группам и подталкивания к самоповреждению. Просьбу прекратить подколы уважай.`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    signal.throwIfAborted();
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        signal,
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "X-Title": "clippyXam",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.85,
+          max_tokens: 400,
+          reasoning: { enabled: false },
+          provider: {
+            sort: "latency",
+            max_price: { prompt: 0, completion: 0 },
           },
-          ...history.slice(-20).map(({ role, content }) => ({ role, content })),
-        ],
-      }),
-    },
-  );
-  if (!response.ok) {
-    const errors: Record<number, string> = {
-      401: "Ключ не принят. Проверь API-ключ в настройках.",
-      402: "OpenRouter ограничил бесплатный доступ. Платный маршрут не включён.",
-      403: "OpenRouter отклонил запрос. Проверь доступ к модели.",
-      404: "Модель не найдена. Проверь её ID в настройках.",
-      429: "Лимит бесплатных запросов. Подожди и повтори; платные модели не используются.",
-    };
-    throw new ChatError(
-      response.status,
-      errors[response.status] ||
-        `OpenRouter недоступен (HTTP ${response.status}). Попробуй позже.`,
+          messages: [
+            { role: "system", content: system },
+            ...history
+              .slice(-20)
+              .map(({ role, content }) => ({ role, content })),
+          ],
+        }),
+      },
     );
+    if (!response.ok) {
+      const errors: Record<number, string> = {
+        401: "Ключ не принят. Проверь API-ключ в настройках.",
+        402: "OpenRouter ограничил бесплатный доступ. Платный маршрут не включён.",
+        403: "OpenRouter отклонил запрос. Проверь доступ к модели.",
+        404: "Бесплатная модель недоступна. Выбери другую в настройках.",
+        429: "Лимит бесплатных запросов. Подожди и повтори; платные модели не используются.",
+      };
+      throw new ChatError(
+        response.status,
+        errors[response.status] ||
+          `OpenRouter недоступен (HTTP ${response.status}). Попробуй позже.`,
+      );
+    }
+    const data = await response.json();
+    if (data?.error)
+      throw new ChatError(
+        Number(data.error.code) || 502,
+        "Провайдер вернул ошибку. Повтори позже; платного fallback нет.",
+      );
+    const content = data?.choices?.[0]?.message?.content;
+    const raw =
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content
+              .filter((p) => p?.type === "text" && typeof p.text === "string")
+              .map((p) => p.text)
+              .join("\n")
+          : "";
+    try {
+      const reply = parseReply(raw);
+      if (
+        (intensity === "soft" || options.allowRude === false) &&
+        reply.mood === "rude"
+      )
+        reply.mood = "speaking";
+      else if (
+        intensity === "wild" &&
+        isInsult(history.at(-1)?.content || "") &&
+        reply.mood === "speaking"
+      )
+        reply.mood = "rude";
+      return reply;
+    } catch (error) {
+      if (!(error instanceof EmptyReplyError) || attempt === 1) throw error;
+      signal.throwIfAborted();
+      options.onRetry?.(); // One bounded repeat on the SAME free model; never retry auth/429.
+    }
   }
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim())
-    throw new Error("Модель вернула пустой ответ. Попробуй другую модель.");
-  const reply = parseReply(content);
-  if (
-    (intensity === "soft" || options.allowRude === false) &&
-    reply.mood === "rude"
-  )
-    reply.mood = "speaking";
-  return reply;
+  throw new EmptyReplyError();
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Dialog from "./Dialog";
+import { DEFAULT_MODEL } from "../lib/chat";
 export default function TokenDialog({
   onSave,
   onClose,
@@ -45,10 +46,11 @@ export default function TokenDialog({
           autoFocus
         />
         <p className="field-help">
-          По умолчанию — бесплатный маршрут openrouter/free. У сервиса есть
-          лимиты и очереди; платные модели не подставляются. Ключ хранится
-          только в памяти и будет запрошен после нового запуска. Проверяется
-          первым запросом.
+          По умолчанию — бесплатная модель {DEFAULT_MODEL}. У сервиса есть
+          лимиты и очереди; платные модели не подставляются. Liquid может
+          хранить запросы и использовать их для обучения. Ключ хранится только в
+          памяти и будет запрошен после нового запуска. Проверяется первым
+          запросом.
         </p>
         <div className="dialog-buttons">
           <button

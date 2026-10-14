@@ -208,7 +208,68 @@ h2 {
 .phase-peeking .nt-actor,
 .phase-rude[data-away="true"] .nt-actor {
   left: 100%;
-  transform: translateX(-50%) rotate(-18deg);
+  transform: translateX(-15%);
+}
+.peek-actor {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 224px;
+  height: 200px;
+}
+.peek-active {
+  transform-origin: 85% 85%;
+  animation: peek-from-edge 3.8s ease-in-out both;
+}
+.peek-active .mascot-sprite {
+  clip-path: inset(0 25% 0 0);
+}
+.peek-active .rude-hand {
+  right: 95px;
+  top: 58px;
+  animation: peek-finger 3.8s both;
+}
+@keyframes peek-from-edge {
+  0%,
+  100% {
+    transform: translateX(90px) rotate(0);
+    opacity: 0;
+  }
+  15% {
+    transform: translateX(-52px) rotate(-18deg);
+    opacity: 1;
+  }
+  30% {
+    transform: translateX(-74px) rotate(-24deg);
+  }
+  48% {
+    transform: translateX(-64px) rotate(-16deg);
+  }
+  64% {
+    transform: translateX(-74px) rotate(-23deg);
+  }
+  82% {
+    transform: translateX(-52px) rotate(-18deg);
+    opacity: 1;
+  }
+}
+@keyframes peek-finger {
+  0%,
+  32%,
+  100% {
+    opacity: 0;
+    transform: translate(20px, 35px) rotate(20deg);
+  }
+  45%,
+  72% {
+    opacity: 1;
+    transform: translate(-10px, 0) rotate(-12deg);
+  }
+  84% {
+    opacity: 0;
+    transform: translate(20px, 35px);
+  }
 }
 .phase-offended .nt-actor {
   transform: translateX(-50%) rotate(5deg);

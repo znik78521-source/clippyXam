@@ -6,6 +6,18 @@ contextBridge.exposeInMainWorld(
     startDictation: () => ipcRenderer.invoke("dictation:start"),
     stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     platform: process.platform,
+    localVoiceState: () => ipcRenderer.invoke("voice:state"),
+    prepareLocalVoice: () => ipcRenderer.invoke("voice:prepare"),
+    synthesizeLocalVoice: (text, rate) =>
+      ipcRenderer.invoke("voice:synthesize", text, rate),
+    stopLocalVoice: () => ipcRenderer.invoke("voice:stop"),
+    onLocalVoiceState: (callback) => {
+      if (typeof callback !== "function")
+        throw new TypeError("Callback required");
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("voice:state-changed", listener);
+      return () => ipcRenderer.removeListener("voice:state-changed", listener);
+    },
     getState: () => ipcRenderer.invoke("window:get-state"),
     setCompanion: (value) => ipcRenderer.invoke("window:set-companion", value),
     publishCompanion: (snapshot) =>

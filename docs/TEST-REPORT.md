@@ -12,6 +12,16 @@
 
 ## Windows gate
 
-Новая сборка ожидает CI. Обязательны live-каталог OpenRouter 200 и invalid-key POST 401 из packaged EXE, реальный синтез Piper, DPAPI/settings-file, виджет с включённым pointer controller, перезапуск с предпочтениями, запуск самого portable и чтение его startup-capability без записи автозапуска на runner.
+**Все Windows-проверки прошли**: [CI 38695314751](https://github.com/znik78521-source/clippyXam/actions/runs/38695314751), commit `57a26dddeb99ffa8da9afabc4fa2b94ccddceabc`.
+
+- Все 157 тестов, включая 28 браузерных сценариев, прошли также на Windows.
+- Live-каталог OpenRouter 200 и invalid-key POST 401 из packaged EXE.
+- Реальный синтез WAV Piper/Denis.
+- DPAPI/settings-file без утечки ключей/переписки; восстановление предпочтений после reload.
+- Виджет с включённым pointer controller, alpha canvas и возвратом основного окна.
+- Запуск самого portable и чтение startup-capability без записи автозапуска на runner.
+
+[Portable 0.7.0](https://github.com/znik78521-source/clippyXam/releases/tag/v0.7.0-portable): 121423473 байт.
+SHA-256: `9229ae71ec0699f6d39f5b73c21fb328cf5d63a23f0fee6858ff4448ba0590bf`.
 
 Это не генерация с действующим пользовательским ключом. Не проверены физические клики/вход в Windows, реальные микрофон/колонки, GPU/DPI/несколько мониторов. Неподтверждённые ресурсы и ограничения отдельно записаны в ROADMAP.md.

@@ -95,8 +95,8 @@ function animateWindow(now: number) {
     p = smooth(t / 0.075);
     if (t > 0.075) scenario = null;
   } else if (scenario.name === "medium") {
-    p = smooth(t / 0.85);
-    if (t > 0.85) scenario = null;
+    p = smooth(t / 1.4);
+    if (t > 1.4) scenario = null;
   } else if (scenario.name === "brake") {
     // Ease into a roughly constant speed, then a hard stop. The STOP is an impulse too.
     p = t < 0.25 ? (0.5 * (t * t)) / (0.25 * 0.72) : (t - 0.125) / 0.72;

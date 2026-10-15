@@ -38,15 +38,18 @@ test("braking sends character forward rather than snapping it upright", () => {
 });
 test("gentle motion has only small sway and cannot trigger a crash", () => {
   const p = new WindowInertia();
-  let max = 0;
+  let max = 0,
+    bend = 0;
   for (let i = 0; i < 360; i++) {
     const t = i / 120;
     p.velocity(t < 1 ? 70 * t : t < 2 ? 70 : 70 * (3 - t), 0);
     p.advance(1 / 120);
     max = Math.max(max, Math.abs(p.state.x));
+    bend = Math.max(bend, Math.abs(p.state.bend));
     assert.equal(p.state.impact, null);
   }
   assert.ok(max < 5);
+  assert.ok(bend < 2, `gentle motion must stay gentle: ${bend}`);
 });
 test("violent jerk makes contact with opposite wall, holds and rebounds", () => {
   const p = new WindowInertia();
@@ -118,4 +121,33 @@ test("moderately fast movement gives a visible bend without a wall crash", () =>
   assert.ok(bend >= 10, `bend ${bend} must be visible`);
   assert.ok(bend <= 40);
   assert.ok(travel < 80);
+});
+
+test("slightly faster than gentle movement visibly bends in both directions without crashing", () => {
+  for (const direction of [-1, 1]) {
+    for (const hz of [20, 60, 120]) {
+      const p = new WindowInertia();
+      let peak = 0;
+      for (let i = 0; i < hz; i++) {
+        const t = i / hz;
+        p.velocity(direction * 220 * Math.min(1, t / 0.2), 0);
+        p.advance(1 / hz);
+        peak = Math.max(peak, -direction * p.state.bend);
+        assert.equal(p.state.impact, null);
+        assert.ok(Math.abs(p.state.x) < 35);
+      }
+      assert.ok(peak >= 10, `visible low-medium bend at ${hz}Hz: ${peak}`);
+      assert.ok(peak < 25);
+      // No persistent pointing pose: constant velocity does not add force.
+      advance(p, 4);
+      assert.ok(Math.abs(p.state.bend) < 0.1);
+      p.velocity(0, 0);
+      advance(p, 0.1);
+      assert.ok(
+        direction * p.state.bend > 10,
+        "braking must carry the body forward",
+      );
+      assert.equal(p.state.impact, null);
+    }
+  }
 });

@@ -93,7 +93,7 @@ export default function AuthoredClippy(props: {
                 preview.name === "InertiaGentle"
                   ? 3.4
                   : preview.name === "InertiaLean"
-                    ? 0.85
+                    ? 1.4
                     : preview.name === "InertiaImpact"
                       ? 0.075
                       : 0;

@@ -54,7 +54,9 @@ export class WindowInertia {
     this.state.vx = clamp(this.state.vx - 0.82 * dx, -3000, 3000);
     this.state.vy = clamp(this.state.vy - 0.66 * dy, -2500, 2500);
     this.state.bendVelocity = clamp(
-      this.state.bendVelocity - 0.65 * dx,
+      // Keep translational momentum unchanged: lower-speed drags bend the body
+      // more visibly without gaining the energy of a violent wall collision.
+      this.state.bendVelocity - 1.1 * dx,
       -600,
       600,
     );

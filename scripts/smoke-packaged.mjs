@@ -148,13 +148,13 @@ try {
   await app.evaluate(async ({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
     for (let i = 1; i <= 8; i++) {
-      w.setPosition(100 + i * 25, 100);
+      w.setPosition(100 + i * 12, 100);
       await new Promise((r) => setTimeout(r, 50));
     }
   });
   await expect
     .poll(() => page.evaluate(() => globalThis.__maxBend))
-    .toBeGreaterThan(4);
+    .toBeGreaterThan(10);
   expect(await page.evaluate(() => globalThis.__impactSides)).toEqual([]);
   const samples = await page.evaluate(() => globalThis.__motionSamples);
   expect(samples.some((s) => s.velocityX > 100 && !s.reset)).toBe(true);

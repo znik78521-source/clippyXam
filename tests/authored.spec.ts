@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-test("new Clippy uses own artwork, medium native velocity bends without crashing, hard acceleration hits wall", async ({
+test("new Clippy uses own artwork, low-medium native velocity visibly bends without crashing, hard acceleration hits wall", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 480, height: 560 });
@@ -61,9 +61,9 @@ test("new Clippy uses own artwork, medium native velocity bends without crashing
   await expect(canvas).toHaveAttribute("data-ready", "true");
   await page.clock.install();
   const rest = await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
-  await page.evaluate(() => (window as any).__move(450));
+  await page.evaluate(() => (window as any).__move(220));
   await page.clock.runFor(110);
-  expect(Number(await canvas.getAttribute("data-bend"))).toBeLessThan(-8);
+  expect(Number(await canvas.getAttribute("data-bend"))).toBeLessThan(-10);
   await expect(canvas).toHaveAttribute("data-motion-state", "lean");
   await expect(canvas).toHaveAttribute("data-impact", "");
   expect(

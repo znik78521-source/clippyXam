@@ -1,3 +1,4 @@
+import { openRouterFetch, TransportError } from "./openrouter-transport";
 import type { Character, Intensity, Message, Reply } from "./characters";
 import { isInsult } from "./behavior";
 
@@ -143,6 +144,8 @@ export async function requestReply(options: {
 }): Promise<Reply> {
   const { key, model, character, intensity, history, signal } = options;
   if (!key.trim()) throw new ChatError(401, "Нужен API-ключ OpenRouter.");
+  if (!/^[\x21-\x7e]{1,4096}$/.test(key))
+    throw new TransportError("INVALID_KEY");
   if (!isFreeModel(model))
     throw new Error(
       "Разрешены только openrouter/free и модели с суффиксом :free.",
@@ -196,13 +199,10 @@ export async function requestReply(options: {
       const instruction =
         system + (index ? " Ответь только по-русски, без иероглифов." : "");
       const context = compatibility
-        ? historyMessages
-            .slice(-8)
-            .map((m, i, a) => ({
-              ...m,
-              content:
-                i === a.length - 1 ? m.content : m.content.slice(0, 1800),
-            }))
+        ? historyMessages.slice(-8).map((m, i, a) => ({
+            ...m,
+            content: i === a.length - 1 ? m.content : m.content.slice(0, 1800),
+          }))
         : historyMessages;
       while (context[0]?.role === "assistant") context.shift();
       const messages = compatibility
@@ -215,28 +215,25 @@ export async function requestReply(options: {
               : m,
           )
         : [{ role: "system", content: instruction }, ...context];
-      const response = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-            "X-Title": "clippyXam",
-          },
-          body: JSON.stringify({
-            model: currentModel,
-            max_tokens: 400,
-            // No reasoning/temperature/response_format forced on incompatible providers.
-            provider: {
-              ...(!compatibility ? { sort: "latency" } : {}),
-              max_price: { prompt: 0, completion: 0 },
-            },
-            messages,
-          }),
+      const response = await openRouterFetch("chat", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "X-Title": "clippyXam",
         },
-      );
+        body: JSON.stringify({
+          model: currentModel,
+          max_tokens: 400,
+          // No reasoning/temperature/response_format forced on incompatible providers.
+          provider: {
+            ...(!compatibility ? { sort: "latency" } : {}),
+            max_price: { prompt: 0, completion: 0 },
+          },
+          messages,
+        }),
+      });
       const data = await response.json().catch(() => null);
       if (!response.ok || data?.error) {
         const status = !response.ok
@@ -293,6 +290,7 @@ export async function requestReply(options: {
       return reply;
     } catch (error) {
       signal.throwIfAborted();
+      if (error instanceof TransportError) throw error;
       if (error instanceof ChatError && [401, 402, 403].includes(error.status))
         throw error;
       if (error instanceof ChatError && error.status === 400)

@@ -5,12 +5,12 @@ import fs from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 const deadline = setTimeout(() => {
   console.error(
-    "Packaged smoke exceeded 120 seconds; terminating test processes.",
+    "Packaged smoke exceeded 180 seconds; terminating test processes.",
   );
   if (process.platform === "win32")
     spawnSync("taskkill", ["/F", "/IM", "clippyXam.exe", "/T"]);
   process.exit(1);
-}, 120000);
+}, 180000);
 deadline.unref();
 const executablePath = path.resolve(
   process.env.SMOKE_EXE || "release/win-unpacked/clippyXam.exe",
@@ -79,29 +79,94 @@ try {
   expect(assets.ok).toBe(true);
   expect(assets.width).toBeGreaterThan(0);
   expect(assets.json).toBe("object");
-  await page.route(
-    "https://openrouter.ai/api/v1/chat/completions",
-    async (route) => {
-      expect(route.request().postDataJSON().model).toBe(
-        "liquid/lfm-2.5-2.6b:free",
+  // Real network checks BEFORE mocks: exercise the shipped bridge from the custom origin.
+  const network = await page.evaluate(async () => {
+    const bridge = window.clippyDesktop;
+    const catalogue = await bridge.openRouterRequest({
+      id: "live-models",
+      kind: "models",
+    });
+    if (
+      catalogue.error ||
+      catalogue.status !== 200 ||
+      !Array.isArray(catalogue.data?.data)
+    )
+      throw new Error(
+        `Native public catalogue failed: ${catalogue.error || catalogue.status}`,
       );
-      await route.fulfill({
-        json: {
-          choices: [
-            {
-              message: {
-                content:
-                  '{"text":"Проверка portable","mood":"speaking","leaveSeconds":0}',
-              },
-            },
-          ],
-        },
+    const invalidKey = await bridge.openRouterRequest({
+      id: "live-auth",
+      kind: "chat",
+      key: "sk-or-v1-" + "0".repeat(64),
+      body: {
+        model: "openrouter/free",
+        max_tokens: 400,
+        provider: { max_price: { prompt: 0, completion: 0 } },
+        messages: [
+          {
+            role: "user",
+            content:
+              "Connectivity probe with deliberately invalid credentials.",
+          },
+        ],
+      },
+    });
+    // Never use real credentials in CI; 401 proves HTTP exchange, not a successful completion.
+    if (invalidKey.error || invalidKey.status !== 401)
+      throw new Error(
+        `Native auth probe failed: ${invalidKey.error || invalidKey.status}`,
+      );
+    return {
+      catalogue: catalogue.status,
+      models: catalogue.data.data.length,
+      invalidKey: invalidKey.status,
+    };
+  });
+  console.log("REAL OpenRouter network from packaged IPC:", network);
+  // Compare the old renderer path; this is diagnostic, not the release gate.
+  const oldPath = await page.evaluate(async () => {
+    try {
+      const r = await fetch("https://openrouter.ai/api/v1/models", {
+        signal: AbortSignal.timeout(8000),
       });
-    },
-  );
+      return { status: r.status };
+    } catch {
+      return { error: "renderer fetch failed (network/CORS)" };
+    }
+  });
+  console.log("Old renderer catalogue transport:", oldPath);
+  await page.route("https://openrouter.ai/api/v1/chat/completions", () => {
+    throw new Error("Chat must not use renderer fetch in desktop");
+  });
+  await app.evaluate(({ net }) => {
+    const original = net.fetch.bind(net);
+    globalThis.__nativeChats = [];
+    net.fetch = async (url, init) => {
+      if (url === "https://openrouter.ai/api/v1/chat/completions") {
+        globalThis.__nativeChats.push(JSON.parse(init.body));
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "Проверка portable" } }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return original(url, init);
+    };
+  });
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).fill("Smoke");
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
   await expect(page.locator(".nt-balloon")).toContainText("Проверка portable");
+  const nativeChats = await app.evaluate(() => globalThis.__nativeChats);
+  expect(nativeChats).toHaveLength(1);
+  expect(
+    nativeChats[0].model === "openrouter/free" ||
+      nativeChats[0].model.endsWith(":free"),
+  ).toBe(true);
+  expect(nativeChats[0].provider.max_price).toEqual({
+    prompt: 0,
+    completion: 0,
+  });
   await page.screenshot({ path: "release/packaged-owner.png" });
   console.log("Owner onboarding/assets/chat passed; opening widget");
   await page.getByRole("button", { name: "Настройки", exact: true }).click();

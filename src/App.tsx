@@ -1,3 +1,4 @@
+import { TransportError } from "./lib/openrouter-transport";
 import { useEffect, useRef, useState } from "react";
 import { CompanionScene } from "./components/CompanionScene";
 import TokenDialog from "./components/TokenDialog";
@@ -473,7 +474,11 @@ export default function App() {
               : "Не удалось получить ответ.",
       );
       setPhase(awayRef.current > Date.now() ? "away" : "idle");
-      setBubble("Даже я иногда теряю связь. Давай попробуем ещё раз.");
+      setBubble(
+        cause instanceof TransportError
+          ? "Не удалось связаться с OpenRouter. Причина указана ниже; смена модели тут не поможет."
+          : "Даже я иногда теряю связь. Давай попробуем ещё раз.",
+      );
     } finally {
       clearTimeout(timeout);
       if (id === requestId.current) {

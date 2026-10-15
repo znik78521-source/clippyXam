@@ -268,3 +268,53 @@ test("native saved key loads before onboarding, without storing it in browser st
   expect(header).toBe("Bearer encrypted-native-test-key");
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
 });
+test("desktop chat and catalogue use native bridge; DNS failure is explicit and not retried across models", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    let chatCalls = 0;
+    const state = {
+      mini: false,
+      maximized: false,
+      minimized: false,
+      alwaysOnTop: false,
+      focused: true,
+    };
+    const update = async () => state;
+    Object.assign(window, { __chatCalls: () => chatCalls });
+    window.clippyDesktop = {
+      platform: "win32",
+      getState: update,
+      onState: () => () => {},
+      setCompanion: update,
+      publishCompanion: () => {},
+      onCompanionAction: () => () => {},
+      minimize: update,
+      toggleMaximize: update,
+      close: async () => {},
+      hideToTray: update,
+      setMini: update,
+      setAlwaysOnTop: update,
+      openRouterRequest: async (input) =>
+        input.kind === "models"
+          ? { status: 200, data: { data: [] } }
+          : (chatCalls++, { error: "DNS" }),
+      openRouterCancel: async () => {},
+    };
+  });
+  let direct = 0;
+  await page.route("https://openrouter.ai/**", (route) => {
+    direct++;
+    return route.abort();
+  });
+  await page.goto("/");
+  await page.getByLabel("API-ключ OpenRouter").fill("test");
+  await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  const composer = page.getByRole("textbox", { name: "Сообщение маскоту" });
+  await composer.fill("Ну привет");
+  await composer.press("Enter");
+  await expect(page.getByRole("alert")).toContainText("[DNS]");
+  await expect(composer).toHaveValue("Ну привет");
+  expect(await page.evaluate(() => (window as any).__chatCalls())).toBe(1);
+  expect(direct).toBe(0);
+});

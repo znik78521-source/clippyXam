@@ -1,3 +1,4 @@
+import { openRouterFetch } from "./openrouter-transport";
 export const DEFAULT_MODEL = "openrouter/free";
 export interface FreeModel {
   id: string;
@@ -66,7 +67,7 @@ export function parseFreeModels(payload: unknown): FreeModel[] {
 }
 export async function fetchFreeModels(signal: AbortSignal) {
   // Intentionally no Authorization: listing is public and does not receive the user's API key.
-  const response = await fetch("https://openrouter.ai/api/v1/models", {
+  const response = await openRouterFetch("models", {
     signal,
   });
   if (!response.ok)

@@ -1,3 +1,4 @@
+import type { NativeRequest, NativeResult } from "./openrouter-transport";
 import { useCallback, useEffect, useState } from "react";
 import type { DictationBridge } from "./useDictation";
 import type { CompanionAction, CompanionSnapshot } from "./companion";
@@ -17,6 +18,8 @@ export interface LocalVoiceState {
   error: string;
 }
 export interface DesktopBridge extends DictationBridge {
+  openRouterRequest?(input: NativeRequest): Promise<NativeResult>;
+  openRouterCancel?(id: string): Promise<void>;
   loadSavedKey?(): Promise<{ key: string; warning: string }>;
   saveKey?(key: string): Promise<void>;
   localVoiceState?(): Promise<LocalVoiceState>;

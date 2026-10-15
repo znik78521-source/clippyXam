@@ -54,42 +54,7 @@ jobs:
             release/THIRD_PARTY_NOTICES.md
           if-no-files-found: error
           retention-days: 30
-      - name: Publish portable testing prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: |
-          $tag = 'v0.6.0-portable'
-          $exe = (Get-ChildItem release/*-portable.exe).FullName
-          $sha = (Get-ChildItem release/*.exe.sha256).FullName
-          $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          $notes = @"
-          ## Portable для Windows 10/11 x64 — без установщика
-          Скачайте **clippyXam-0.6.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
-
-          Новый раскрываемый список бесплатных моделей: компактные первыми, остальные в резерве; обновление из публичного каталога без передачи ключа. Автовыбор по умолчанию. Выбранная вручную модель пробуется первой. При HTTP 400/404/408/429/5xx, сетевом сбое, пустом ответе или иероглифах — другая бесплатная модель (до 4 ID, до 9 секунд на каждую). При 401/402/403 перебор прекращается; его можно отключить. Убраны принудительные reasoning/temperature, нормализованы роли истории; после 400 следующий запрос получает совместимый формат. Только free-маршруты с нулевыми ценовыми ограничениями, платного fallback нет.
-
-          Скорость не гарантируется: компактность — ориентир, не замер. Попытки расходуют бесплатную квоту, общий лимит аккаунта смена модели не обходит. Текст может попасть нескольким провайдерам с разными правилами хранения. Живые запросы с пользовательским ключом не проверялись, точная причина его 400 не подтверждена. Неуспешное сообщение остаётся в поле, новые правки не затираются. Восемь визуальных мемных сценок и NT-рамка сохранены.
-
-          Встроенная русская озвучка Piper/Denis включена по умолчанию: автоматически скачивает 63 МБ с Hugging Face при первом запуске, далее работает локально без голосов Windows/ключей/платных API. Для первого скачивания нужен интернет. Голос сохраняется в clippyXam-data/voices. Возможен повтор загрузки в настройках. Это озвучка ответа, а не распознавание микрофона.
-
-          Рядом с exe создаётся clippyXam-data. Ключ OpenRouter сохраняется зашифрованным через Windows DPAPI и загружается при следующем запуске. При переносе на другой компьютер потребуется повторный ввод. Бесплатные модели имеют лимиты; платного fallback нет. OpenAI TTS — отдельная явно платная опция.
-
-          **Без цифровой подписи:** возможны предупреждения SmartScreen. Не отключайте защиту вслепую. Для микрофона нужен совместимый ru-RU System.Speech recognizer; запасной путь — поле ввода и Win+H. Реальный микрофон/голоса, GPU/DPI и многомониторность на машине пользователя ещё требуют проверки.
-
-          Сборка для ручного тестирования, не стабильный релиз. На Windows runner прошли проверки типов, логики и контроллеров, а также настоящий синтез русского WAV движком Piper; exe собран. Полная автоматическая проверка запуска именно этого бинарника ещё не подтверждена. Живые API, микрофон и голоса не тестировались. Возможны ошибки интерфейса и виджета.
-
-          SHA-256: $digest
-          Commit: ${{ github.sha }}
-          Build: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          "@
-          $notes | Set-Content -Encoding utf8 release/release-notes.md
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.6.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
-          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Packaged application smoke
-        continue-on-error: true
         timeout-minutes: 4
         env:
           DEBUG: pw:browser
@@ -102,7 +67,6 @@ jobs:
             exit 1
           }
       - name: Check portable launcher
-        continue-on-error: true
         timeout-minutes: 4
         shell: pwsh
         run: |
@@ -120,6 +84,40 @@ jobs:
           } finally {
             if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           }
+      - name: Publish portable testing prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = 'v0.6.1-portable'
+          $exe = (Get-ChildItem release/*-portable.exe).FullName
+          $sha = (Get-ChildItem release/*.exe.sha256).FullName
+          $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $notes = @"
+          ## Portable для Windows 10/11 x64 — без установщика
+          Скачайте **clippyXam-0.6.1-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+
+          Исправлен сетевой транспорт portable: чат и список моделей идут через основной процесс Electron, а не renderer с clippyxam:// origin. Фиксированные HTTPS-адреса OpenRouter, системный proxy/TLS, без отключения CORS/проверки сертификатов. При DNS/TLS/прокси/обрыве показывается безопасный код, а не бесполезный перебор четырёх моделей. Бесплатные модели, переключение при отказе провайдера/таймауте, нулевые цены и сохранение черновика остаются.
+
+          Перед публикацией обязательны настоящий запрос публичного каталога (HTTP 200) и авторизационная проба с заведомо неверным тестовым ключом (HTTP 401) из packaged EXE через IPC. Это проверяет реальную сеть, но НЕ генерацию с пользовательским ключом. Ключей/текстов пользователя в проверках нет. Точную причину сбоя на его компьютере по прежней общей ошибке определить нельзя. Скорость и доступность бесплатных моделей не гарантированы.
+
+          Встроенная русская озвучка Piper/Denis включена по умолчанию: автоматически скачивает 63 МБ с Hugging Face при первом запуске, далее работает локально без голосов Windows/ключей/платных API. Для первого скачивания нужен интернет. Голос сохраняется в clippyXam-data/voices. Возможен повтор загрузки в настройках. Это озвучка ответа, а не распознавание микрофона.
+
+          Рядом с exe создаётся clippyXam-data. Ключ OpenRouter сохраняется зашифрованным через Windows DPAPI и загружается при следующем запуске. При переносе на другой компьютер потребуется повторный ввод. Бесплатные модели имеют лимиты; платного fallback нет. OpenAI TTS — отдельная явно платная опция.
+
+          **Без цифровой подписи:** возможны предупреждения SmartScreen. Не отключайте защиту вслепую. Для микрофона нужен совместимый ru-RU System.Speech recognizer; запасной путь — поле ввода и Win+H. Реальный микрофон/голоса, GPU/DPI и многомониторность на машине пользователя ещё требуют проверки.
+
+          Сборка для ручного тестирования, не стабильный релиз. На Windows runner прошли проверки типов, логики и контроллеров, а также настоящий синтез русского WAV движком Piper; exe собран. Запуск packaged/portable, сетевой путь к OpenRouter (каталог/401, без генерации) и русский синтез проверены до публикации. Генерация с пользовательским ключом, реальный микрофон и прослушивание на устройстве пользователя не тестировались. Возможны ошибки интерфейса и виджета.
+
+          SHA-256: $digest
+          Commit: ${{ github.sha }}
+          Build: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          "@
+          $notes | Set-Content -Encoding utf8 release/release-notes.md
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.6.1 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Report smoke failure diagnostics
         if: failure()
         shell: pwsh

@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld(
     startDictation: () => ipcRenderer.invoke("dictation:start"),
     stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     platform: process.platform,
+    openRouterRequest: (input) => ipcRenderer.invoke("openrouter:request", input),
+    openRouterCancel: (id) => ipcRenderer.invoke("openrouter:cancel", id),
     loadSavedKey: () => ipcRenderer.invoke("key:load"),
     saveKey: (key) => ipcRenderer.invoke("key:save", key),
     localVoiceState: () => ipcRenderer.invoke("voice:state"),

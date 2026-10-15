@@ -60,7 +60,14 @@ const dictation = require("./dictation.cjs").createDictation();
 app.setName("clippyXam");
 if (process.platform === "win32") app.setAppUserModelId("ai.clippyxam");
 
-let win, controller, tray, saveTimer, companion, localVoice, keyVault;
+let win,
+  controller,
+  tray,
+  saveTimer,
+  companion,
+  localVoice,
+  keyVault,
+  openRouter;
 let companionSnapshot = null,
   companionBounds = null;
 let quitting = false;
@@ -219,6 +226,12 @@ function installIPC() {
       win.close();
     },
   };
+  require("./openrouter.cjs").installOpenRouterIPC({
+    ipcMain,
+    getOwner: () => (win?.isDestroyed() ? null : win?.webContents),
+    getURL: () => devURL,
+    transport: openRouter,
+  });
   handlers["key:load"] = () => keyVault.load();
   handlers["key:save"] = (key) => keyVault.save(key);
   handlers["voice:state"] = () => localVoice.state();
@@ -449,6 +462,13 @@ async function createWindow() {
   });
   installIPC();
   installCompanionIPC();
+  win.webContents.on("render-process-gone", () => openRouter?.dispose());
+  win.webContents.on(
+    "did-start-navigation",
+    (_event, _url, _inPlace, isMainFrame) => {
+      if (isMainFrame) openRouter?.dispose();
+    },
+  );
   win.webContents.session.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
   );
@@ -509,6 +529,7 @@ async function createWindow() {
     quitting = true;
     dictation.stop();
     localVoice?.dispose();
+    openRouter?.dispose();
     companion?.dispose();
     win = null;
     app.quit();
@@ -559,6 +580,9 @@ else {
             }
           });
       }
+      openRouter = require("./openrouter.cjs").createOpenRouter({
+        fetchImpl: (...args) => net.fetch(...args),
+      });
       keyVault = require("./key-vault.cjs").createKeyVault({
         directory: app.getPath("userData"),
         safeStorage,
@@ -602,6 +626,7 @@ else {
     quitting = true;
     dictation.stop();
     localVoice?.dispose();
+    openRouter?.dispose();
     companion?.dispose();
     clearTimeout(saveTimer);
     savePreferences();

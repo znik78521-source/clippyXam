@@ -1,3 +1,4 @@
+import { TransportError } from "./openrouter-transport";
 import { useEffect, useRef, useState } from "react";
 import {
   BOOTSTRAP_MODELS,
@@ -24,10 +25,11 @@ export function useFreeModels() {
         setModels(result);
         setLive(true);
       }
-    } catch {
+    } catch (cause) {
       if (active.current && request.current === controller)
         setError(
-          "Не удалось обновить каталог. Используется последний список; доступность моделей может измениться.",
+          "Не удалось обновить каталог. Используется последний список; доступность моделей может измениться." +
+            (cause instanceof TransportError ? " " + cause.message : ""),
         );
     } finally {
       clearTimeout(timer);

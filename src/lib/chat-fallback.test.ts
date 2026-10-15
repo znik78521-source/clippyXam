@@ -108,11 +108,11 @@ test("per-model timeout includes response body; next model may succeed", async (
   );
   assert.equal(calls, 2);
 });
-test("network failure falls back, cancellation aborts active fetch and never starts next model", async (t) => {
+test("provider HTTP failure falls back, cancellation aborts active fetch and never starts next model", async (t) => {
   let calls = 0;
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async (_, init) => {
-    if (++calls === 1) throw new TypeError("Failed to fetch");
+    if (++calls === 1) return Response.json({}, {status:503});
     return new Promise<Response>((_, reject) => {
       init!.signal!.addEventListener("abort", () =>
         reject(new DOMException("Aborted", "AbortError")),

@@ -71,7 +71,7 @@ test("Enter submits exactly once to free route with zero-price limits and no lea
   await page.route(endpoint, async (route) => {
     calls++;
     const body = route.request().postDataJSON();
-    expect(body.model).toBe("liquid/lfm-2.5-2.6b:free");
+    expect(body.model).toBe("openrouter/free");
     expect(body.provider).toEqual({
       sort: "latency",
       max_price: { prompt: 0, completion: 0 },
@@ -104,7 +104,7 @@ test("token removal and 401 force onboarding; dropdown contains only free routes
     options.every((id) => id === "openrouter/free" || id.endsWith(":free")),
   ).toBe(true);
   await page.getByLabel("Бесплатная модель").selectOption("openrouter/free");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Тест");
   await expect(
     page.getByRole("dialog", { name: "Подключение к OpenRouter" }),
@@ -113,7 +113,7 @@ test("token removal and 401 force onboarding; dropdown contains only free routes
   await page.getByRole("button", { name: "Подключить", exact: true }).click();
   await settings(page);
   await page.getByLabel("API-ключ OpenRouter").fill("");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "Подключение к OpenRouter" }),
   ).toBeVisible();
@@ -126,7 +126,7 @@ test("widget lives in settings, keeps caption controls and returns after setting
   await page
     .getByRole("checkbox", { name: "Виджет на рабочем столе", exact: true })
     .check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await expect(page.locator(".nt-companion")).toHaveClass(/nt-widget/);
   await settings(page);
   await expect(
@@ -135,7 +135,7 @@ test("widget lives in settings, keeps caption controls and returns after setting
       exact: true,
     }),
   ).toBeChecked();
-  await page.getByRole("button", { name: "Отмена", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await expect(page.locator(".nt-companion")).toHaveClass(/nt-widget/);
   await page.getByRole("button", { name: "Свернуть", exact: true }).click();
   await page.getByRole("button", { name: "Вернуть окно", exact: true }).click();
@@ -259,7 +259,8 @@ test("away timer and gentle boundary remain functional without demo", async ({
   await send(page, "Перерыв");
   await expect(page.locator(".nt-balloon")).toContainText("Ушёл");
   await page.clock.runFor(4000);
-  await expect(page.locator(".nt-balloon")).toContainText("вернулся");
+  await expect(page.locator(".nt-stage")).toHaveClass(/phase-idle/);
+  await expect(page.locator(".nt-balloon")).toContainText("Ушёл");
   await send(page, "Без подколов");
   await expect(page.locator(".nt-balloon")).toContainText("мягкий режим");
   expect(calls).toBe(1);
@@ -280,17 +281,17 @@ test("session memory and different personas still use separate model contexts", 
       name: "Помнить отдельный диалог каждого маскота в этой сессии",
     })
     .check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Первая скрепка");
   await expect(page.locator(".nt-balloon")).toContainText("Ответ модели");
   await settings(page);
   await page.getByLabel("Персонаж", { exact: true }).selectOption("rover");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Первый пёс");
   await expect(page.locator(".nt-balloon")).toContainText("Ответ модели");
   await settings(page);
   await page.getByLabel("Персонаж", { exact: true }).selectOption("clippy");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Вторая скрепка");
   await expect.poll(() => contexts.length).toBe(3);
   expect(contexts[2]).toContain("Первая скрепка");
@@ -309,7 +310,7 @@ test("small viewport keeps token flow and minimal input accessible", async ({
   );
   await settings(page);
   await expect(
-    page.getByRole("button", { name: "Применить", exact: true }),
+    page.getByRole("button", { name: "Готово", exact: true }),
   ).toBeVisible();
 });
 test("429 is explicit, retries at most four different free routes", async ({
@@ -326,7 +327,10 @@ test("429 is explicit, retries at most four different free routes", async ({
   });
   await connect(page);
   await send(page, "Вопрос");
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(
+    page.getByRole("button", { name: "Настройки", exact: true }),
+  ).toHaveAttribute("data-diagnostic", "true");
+  await expect(page.locator(".nt-balloon")).not.toContainText(
     "Лимит бесплатных запросов",
   );
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -380,7 +384,7 @@ test("system voice can be enabled and stopped without enabling paid TTS", async 
   await page
     .getByRole("checkbox", { name: "Озвучивать ответы", exact: true })
     .check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Привет");
   await expect
     .poll(() => page.evaluate(() => (window as any).__spoken))
@@ -433,15 +437,15 @@ test("empty completion recovers once, truncated JSON is shown as dialogue only",
   await expect(page.locator(".nt-balloon")).not.toContainText('{"text"');
   expect(calls).toBe(2);
 });
-test("peeking uses its own authored timeline and gesture behind the edge", async ({
+test("peeking uses original attention frames without synthetic hand or overlay", async ({
   page,
 }) => {
   let calls = 0;
   await page.route(endpoint, (route) =>
     route.fulfill({
       json: response(
-        ++calls === 1 ? "Ушёл" : "Отвернись, мудила.",
-        calls === 1 ? "offended" : "rude",
+        ++calls === 1 ? "Ушёл" : "Я здесь",
+        calls === 1 ? "offended" : "peeking",
         calls === 1 ? 25 : 0,
       ),
     }),
@@ -452,14 +456,15 @@ test("peeking uses its own authored timeline and gesture behind the edge", async
   await expect(page.locator(".nt-balloon")).toContainText("Ушёл");
   await page.clock.runFor(2000);
   await send(page, "Ты где?");
-  await expect(page.locator('[data-animation="peek-from-edge"]')).toBeVisible();
-  expect(
-    await page
-      .locator(".peek-active")
-      .evaluate((el) => getComputedStyle(el).animationName),
-  ).toBe("peek-from-edge");
-  await expect(page.locator(".peek-active .rude-hand")).toHaveCount(1);
-  await expect(page.locator(".nt-balloon")).toContainText("Отвернись");
+  await expect(page.locator(".nt-balloon")).toContainText("Я здесь");
+  await page.clock.runFor(300);
+  await expect(page.locator(".mascot-sprite")).toHaveAttribute(
+    "data-original-animation",
+    "GetAttention",
+  );
+  await expect(
+    page.locator(".peek-animation,.rude-hand,.cinematic"),
+  ).toHaveCount(0);
 });
 test("failed send keeps original text; successful retry clears it and does not duplicate history", async ({
   page,
@@ -475,7 +480,9 @@ test("failed send keeps original text; successful retry clears it and does not d
   });
   await connect(page);
   await send(page, "Не потеряй это сообщение");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Настройки", exact: true }),
+  ).toHaveAttribute("data-diagnostic", "true");
   await expect(
     page.getByRole("textbox", { name: "Сообщение маскоту" }),
   ).toHaveValue("Не потеряй это сообщение");
@@ -509,7 +516,9 @@ test("failure cannot overwrite a new draft typed while waiting", async ({
       .getByRole("textbox", { name: "Сообщение маскоту" })
       .fill("Новый черновик");
     release();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Настройки", exact: true }),
+    ).toHaveAttribute("data-diagnostic", "true");
     await expect(
       page.getByRole("textbox", { name: "Сообщение маскоту" }),
     ).toHaveValue("Новый черновик");
@@ -517,34 +526,28 @@ test("failure cannot overwrite a new draft typed while waiting", async ({
     release();
   }
 });
-test("all eight visual gags can be previewed without network or OS commands", async ({
+test("original frames can be previewed for each mascot without synthetic scenes", async ({
   page,
 }) => {
   await connect(page);
-  for (const kind of [
-    "bat",
-    "burrow",
-    "jail",
-    "flame",
-    "rage",
-    "format",
-    "bsod",
-    "update",
+  for (const [id, name] of [
+    ["clippy", "GetArtsy"],
+    ["merlin", "DoMagic1"],
+    ["rover", "Sports"],
   ]) {
     await settings(page);
+    await page.getByLabel("Персонаж", { exact: true }).selectOption(id);
     await page.getByRole("tab", { name: "Поведение", exact: true }).click();
-    await page.getByLabel("Просмотр мемной сценки").selectOption(kind);
+    await page.getByLabel("Оригинальная анимация").selectOption(name);
     await page
-      .getByRole("button", { name: "Показать сценку", exact: true })
+      .getByRole("button", { name: "Показать анимацию", exact: true })
       .click();
-    await expect(
-      page.locator(`.nt-stage[data-cinematic="${kind}"]`),
-    ).toBeVisible();
-    await expect(page.locator(`.cinematic-${kind}`)).toBeVisible();
+    await expect(page.locator(".mascot-sprite")).toHaveAttribute(
+      "data-original-animation",
+      name,
+    );
+    await expect(page.locator(".cinematic,.rude-hand")).toHaveCount(0);
   }
-  await expect(page.locator(".fake-system")).toContainText(
-    "WINDOWS НЕ ЗАТРОНУТА",
-  );
 });
 test("live model dropdown excludes paid models and selected HTTP400 falls back without losing draft", async ({
   page,
@@ -606,12 +609,12 @@ test("live model dropdown excludes paid models and selected HTTP400 falls back w
   await page
     .getByLabel("Бесплатная модель")
     .selectOption("test/reserve-70b:free");
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Вопрос для резерва");
   await expect(page.locator(".nt-balloon")).toContainText("Сработал резерв");
   expect(bodies.map((b) => b.model)).toEqual([
     "test/reserve-70b:free",
-    "test/fast-4b:free",
+    "openrouter/free",
   ]);
   expect(bodies[1].messages.every((m: any) => m.role !== "system")).toBe(true);
   expect(bodies[1].provider.max_price).toEqual({ prompt: 0, completion: 0 });
@@ -632,17 +635,75 @@ test("fallback can be disabled; catalog failure retains bootstrap choices", asyn
   await expect(
     page.getByText("Не удалось обновить каталог.", { exact: false }),
   ).toBeVisible();
-  await page
-    .getByLabel("Бесплатная модель")
-    .selectOption("liquid/lfm-2.5-2.6b:free");
+  await page.getByLabel("Бесплатная модель").selectOption("openrouter/free");
   await page
     .getByLabel("Если не отвечает — пробовать другую бесплатную модель")
     .uncheck();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Сохрани черновик");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Настройки", exact: true }),
+  ).toHaveAttribute("data-diagnostic", "true");
   expect(calls).toBe(1);
   await expect(
     page.getByRole("textbox", { name: "Сообщение маскоту" }),
   ).toHaveValue("Сохрани черновик");
+});
+test("long reply retains paragraphs and ending; default router gets expanded token budget", async ({
+  page,
+}) => {
+  const text =
+    "Начало ответа.\n\n" +
+    "Подробное объяснение, которое нельзя обрезать. ".repeat(85) +
+    "\n\nКОНЕЦ ПОЛНОГО ОТВЕТА";
+  await page.route(endpoint, (route) => {
+    expect(route.request().postDataJSON().max_tokens).toBe(2048);
+    return route.fulfill({ json: response(text) });
+  });
+  await connect(page);
+  await send(page, "Расскажи подробно");
+  await expect(page.locator(".nt-balloon > span")).toHaveText(text);
+  expect(
+    await page
+      .locator(".nt-balloon > span")
+      .evaluate((e) => e.scrollHeight > e.clientHeight),
+  ).toBe(true);
+  await page.locator(".nt-balloon > span").evaluate((e) => {
+    e.scrollTop = e.scrollHeight;
+  });
+  expect(
+    await page.locator(".nt-balloon > span").evaluate((e) => e.scrollTop),
+  ).toBeGreaterThan(0);
+});
+test("all mascots animate autonomously with changed canvas pixels and varied original actions", async ({
+  page,
+}) => {
+  await connect(page);
+  await page.clock.install();
+  for (const id of ["clippy", "merlin", "rover"]) {
+    if (id !== "clippy") {
+      await settings(page);
+      await page.getByLabel("Персонаж", { exact: true }).selectOption(id);
+      await page.getByRole("button", { name: "Готово", exact: true }).click();
+    }
+    await expect(
+      page.getByRole("img", { name: id, exact: true }),
+    ).toBeVisible();
+    const pixels = new Set<string>(),
+      actions = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      await page.clock.runFor(400);
+      pixels.add(
+        await page
+          .locator(".mascot-canvas")
+          .evaluate((c: HTMLCanvasElement) => c.toDataURL()),
+      );
+      const action = await page
+        .locator(".mascot-sprite")
+        .getAttribute("data-original-animation");
+      if (action && action !== "RestPose") actions.add(action);
+    }
+    expect(pixels.size, `${id} visible frames`).toBeGreaterThan(3);
+    expect(actions.size, `${id} varied idle`).toBeGreaterThanOrEqual(2);
+  }
 });

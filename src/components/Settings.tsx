@@ -1,11 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
 import Dialog from "./Dialog";
-import {
-  cinematicNames,
-  cinematicLabel,
-  type CinematicKind,
-} from "../lib/cinematics";
+import { originalActions } from "../lib/original-animations";
 import { characters } from "../lib/characters";
 import type { useFreeModels } from "../lib/useFreeModels";
 import { DEFAULT_MODEL, isFreeModel } from "../lib/chat";
@@ -37,16 +33,18 @@ export default function Settings({
   modelCatalog,
   localVoiceState,
   onPreview,
+  diagnostic,
 }: {
   settings: SettingsData;
   modelCatalog: ReturnType<typeof useFreeModels>;
   voices: SpeechSynthesisVoice[];
   localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
-  onPreview?: (kind: CinematicKind) => void;
+  onPreview?: (name: string) => void;
+  diagnostic?: string;
   onSave: (data: SettingsData) => void | Promise<void>;
   onClose: () => void;
 }) {
-  const [preview, setPreview] = useState<CinematicKind>("bat");
+  const [preview, setPreview] = useState("");
   const [draft, setDraft] = useState(settings);
   const [tab, setTab] = useState<"connection" | "voice" | "behavior">(
     "connection",
@@ -54,28 +52,107 @@ export default function Settings({
   const [showKey, setShowKey] = useState(false);
   const [validation, setValidation] = useState("");
   const [startup, setStartup] = useState({ available: false, enabled: false });
-  const [startWithWindows, setStartWithWindows] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(false),
+    [saved, setSaved] = useState(true);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  const lastSaved = useRef(JSON.stringify(settings)),
+    chain = useRef(Promise.resolve(true)),
+    active = useRef(true);
+  async function flush() {
+    const value = draftRef.current,
+      stamp = JSON.stringify(value);
+    const task = chain.current.then(async () => {
+      if (stamp === lastSaved.current) return true;
+      if (
+        !isFreeModel(value.model.trim()) ||
+        (value.ttsProvider === "openai" && !value.ttsKey.trim())
+      ) {
+        if (active.current)
+          setValidation(
+            "Укажи бесплатную модель и, для платного TTS, отдельный ключ.",
+          );
+        return false;
+      }
+      if (active.current) {
+        setSaving(true);
+        setValidation("");
+      }
+      try {
+        await saveRef.current({
+          ...value,
+          key: value.key.trim(),
+          ttsKey: value.ttsKey.trim(),
+          model: value.model.trim(),
+        });
+        lastSaved.current = stamp;
+        if (active.current)
+          setSaved(stamp === JSON.stringify(draftRef.current));
+        return true;
+      } catch {
+        if (active.current)
+          setValidation(
+            "Не удалось сохранить. Проверь доступ к папке приложения.",
+          );
+        return false;
+      } finally {
+        if (active.current) setSaving(false);
+      }
+    });
+    chain.current = task;
+    return task;
+  }
+  async function close() {
+    if (await flush()) onClose();
+  }
   useEffect(() => {
-    let active = true;
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (JSON.stringify(draft) === lastSaved.current) return;
+    setSaved(false);
+    const timer = setTimeout(() => void flush(), 400);
+    return () => clearTimeout(timer);
+  }, [draft]);
+  useEffect(() => {
+    let live = true;
     void window.clippyDesktop
       ?.getStartup?.()
       .then((value) => {
-        if (active) {
-          setStartup(value);
-          setStartWithWindows(value.enabled);
-        }
+        if (live) setStartup(value);
       })
       .catch(() => {
-        if (active)
-          setValidation("Не удалось прочитать настройку автозапуска.");
+        if (live) setValidation("Не удалось прочитать автозапуск.");
       });
     return () => {
-      active = false;
+      live = false;
     };
   }, []);
+  async function changeStartup(enabled: boolean) {
+    setSaving(true);
+    try {
+      const result = await window.clippyDesktop?.setStartup?.(enabled);
+      if (result) setStartup(result);
+    } catch {
+      setValidation("Windows не сохранила автозапуск.");
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
-    <Dialog title="Свойства: clippyXam" onClose={onClose} wide>
+    <Dialog title="Свойства: clippyXam" onClose={() => void close()} wide>
+      <div className="settings-save-status" role="status">
+        {saving
+          ? "Сохраняю…"
+          : saved
+            ? "Изменения сохраняются автоматически"
+            : "Есть изменения…"}
+      </div>
       <div className="dialog-heading">
         <div className="dialog-icon">
           <Cable size={28} />
@@ -97,44 +174,7 @@ export default function Settings({
           </p>
         </div>
       </div>
-      <form
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (!isFreeModel(draft.model.trim())) {
-            setTab("connection");
-            setValidation(
-              "Укажи openrouter/free или ID бесплатной модели с суффиксом :free.",
-            );
-            return;
-          }
-          if (draft.ttsProvider === "openai" && !draft.ttsKey.trim()) {
-            setTab("voice");
-            setValidation("Для OpenAI TTS нужен отдельный API-ключ.");
-            return;
-          }
-          setSaving(true);
-          try {
-            if (startWithWindows !== startup.enabled) {
-              const result =
-                await window.clippyDesktop?.setStartup?.(startWithWindows);
-              if (!result) throw new Error("Автозапуск недоступен.");
-              setStartup(result);
-            }
-            await onSave({
-              ...draft,
-              key: draft.key.trim(),
-              ttsKey: draft.ttsKey.trim(),
-              model: draft.model.trim(),
-            });
-          } catch {
-            setValidation(
-              "Не удалось применить настройки. Проверь права записи. Изменённый автозапуск мог сохраниться отдельно.",
-            );
-          } finally {
-            setSaving(false);
-          }
-        }}
-      >
+      <form onSubmit={(event) => event.preventDefault()}>
         <div
           className="settings-tabs"
           role="tablist"
@@ -187,6 +227,12 @@ export default function Settings({
           hidden={tab !== "connection"}
         >
           <legend>Подключение</legend>
+          {diagnostic && (
+            <details className="connection-diagnostic">
+              <summary>Диагностика подключения и голоса</summary>
+              <pre>{diagnostic}</pre>
+            </details>
+          )}
           <label className="field-label" htmlFor="character">
             Персонаж
           </label>
@@ -241,9 +287,9 @@ export default function Settings({
           <label className="behavior-option">
             <input
               type="checkbox"
-              checked={startWithWindows}
+              checked={startup.enabled}
               disabled={!startup.available || saving}
-              onChange={(event) => setStartWithWindows(event.target.checked)}
+              onChange={(event) => void changeStartup(event.target.checked)}
             />
             Запускать при входе в Windows
           </label>
@@ -287,7 +333,7 @@ export default function Settings({
             </a>
           </div>
           <button type="button" onClick={() => setDraft({ ...draft, key: "" })}>
-            Удалить сохранённый ключ при применении
+            Удалить сохранённый ключ
           </button>
           <p className="field-help">
             В Windows ключ сохраняется зашифрованным, привязан к твоей учётной
@@ -306,7 +352,7 @@ export default function Settings({
             }
           >
             <option value={DEFAULT_MODEL}>
-              Автовыбор: компактные → резерв → free router
+              OpenRouter Free — стандартный бесплатный маршрут
             </option>
             {!modelCatalog.models.some((m) => m.id === draft.model) &&
               draft.model !== DEFAULT_MODEL && (
@@ -361,7 +407,7 @@ export default function Settings({
             Если не отвечает — пробовать другую бесплатную модель
           </label>
           <p className="field-help">
-            До четырёх разных моделей, до 9 секунд на каждую. При HTTP 400
+            До четырёх разных моделей, до 15 секунд на каждую. При HTTP 400
             следующая получает упрощённый совместимый запрос. Ключ/аккаунт
             (401/402/403) не перебираются. Каждый запрос расходует бесплатный
             лимит; платного fallback нет. Текст может попасть к нескольким
@@ -534,21 +580,6 @@ export default function Settings({
               ))}
             </select>
           </div>
-          <label className="setting-check">
-            <input
-              type="checkbox"
-              checked={draft.speechMotion}
-              onChange={(event) =>
-                setDraft({ ...draft, speechMotion: event.target.checked })
-              }
-            />
-            Двигаться в такт озвучке
-          </label>
-          <p className="field-help">
-            Для Piper — по громкости воспроизводимого WAV, не по буквам и не во
-            время загрузки. Это ритм речи, не точные фонемы рта. Reduced motion
-            отключает движение.
-          </p>
           <label className="rate-label" htmlFor="rate">
             Скорость <span>{draft.rate.toFixed(1)}×</span>
           </label>
@@ -556,8 +587,8 @@ export default function Settings({
             id="rate"
             type="range"
             min="0.7"
-            max="1.4"
-            step="0.1"
+            max="1.8"
+            step="0.05"
             value={draft.rate}
             onChange={(event) =>
               setDraft({ ...draft, rate: Number(event.target.value) })
@@ -575,27 +606,35 @@ export default function Settings({
           hidden={tab !== "behavior"}
         >
           <legend>Характер и границы</legend>
-          <label className="field-label" htmlFor="cinematic-preview">
-            Просмотр мемной сценки
+          <label className="field-label" htmlFor="original-preview">
+            Оригинальная анимация
           </label>
           <select
-            id="cinematic-preview"
-            value={preview}
-            onChange={(event) =>
-              setPreview(event.target.value as CinematicKind)
-            }
+            id="original-preview"
+            value={preview || originalActions[draft.character][0]}
+            onChange={(event) => setPreview(event.target.value)}
           >
-            {cinematicNames.map((kind) => (
-              <option key={kind} value={kind}>
-                {cinematicLabel[kind]}
-              </option>
+            {originalActions[draft.character].map((name) => (
+              <option key={name}>{name}</option>
             ))}
           </select>
-          <button type="button" onClick={() => onPreview?.(preview)}>
-            Показать сценку
+          <button
+            type="button"
+            onClick={async () => {
+              if (await flush())
+                onPreview?.(
+                  originalActions[draft.character].includes(preview)
+                    ? preview
+                    : originalActions[draft.character][0],
+                );
+            }}
+          >
+            Показать анимацию
           </button>
           <p className="field-help">
-            Только анимации в окне. Файлы и Windows не затрагиваются.
+            Только оригинальные кадры выбранного персонажа. Самостоятельные
+            действия включаются ниже; накладок с битой, огнём и закапыванием
+            больше нет.
           </p>
           <label className="field-label" htmlFor="intensity">
             Характер
@@ -625,7 +664,7 @@ export default function Settings({
                 })
               }
             />
-            Самостоятельно выглядывать и комментировать
+            Самостоятельные оригинальные анимации и выглядывание
           </label>
           <label className="setting-check">
             <input
@@ -740,16 +779,12 @@ export default function Settings({
           </p>
         )}
         <div className="dialog-buttons">
-          <button className="nt-button primary" type="submit" disabled={saving}>
-            Применить
-          </button>
           <button
             className="nt-button"
             type="button"
-            onClick={onClose}
-            disabled={saving}
+            onClick={() => void close()}
           >
-            Отмена
+            Готово
           </button>
         </div>
       </form>

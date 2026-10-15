@@ -230,3 +230,106 @@ test("audio levels reset on stop and late frames cannot animate a new utterance"
   assert.equal(levels.at(-1), null);
   queue.stop();
 });
+test("reply presentation waits for playback, happens once, and stop reveals text without late callbacks", async () => {
+  let started = () => {},
+    finished = () => {},
+    shown = 0;
+  const queue = new SpeechQueue(
+    (_t, _o, _s, start) =>
+      new Promise<void>((resolve) => {
+        started = start;
+        finished = resolve;
+      }),
+    () => {},
+    assert.fail,
+  );
+  queue.enqueue("Длинный ответ", options, () => shown++);
+  assert.equal(shown, 0);
+  started();
+  started();
+  assert.equal(shown, 1);
+  finished();
+  await flush();
+  queue.enqueue("Следующий", options, () => shown++);
+  queue.stop();
+  assert.equal(shown, 2);
+  started();
+  finished();
+  await flush();
+  assert.equal(shown, 2);
+});
+test("local speech prefetches next phrase during playback and preserves full long reply", async (t) => {
+  const { createBrowserVoiceDriver } = await import("./speech");
+  const spoken: string[] = [],
+    audios: any[] = [];
+  let stops = 0;
+  t.mock.method(globalThis, "setInterval", () => 0 as any);
+  t.mock.method(globalThis, "clearInterval", () => {});
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window"),
+    originalAudio = Object.getOwnPropertyDescriptor(globalThis, "Audio");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      clippyDesktop: {
+        synthesizeLocalVoice: async (text: string) => {
+          spoken.push(text);
+          return new Uint8Array([1, 2, 3]);
+        },
+        stopLocalVoice: async () => {
+          stops++;
+        },
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    value: class {
+      onplaying: any;
+      onended: any;
+      onerror: any;
+      constructor() {
+        audios.push(this);
+      }
+      play() {
+        this.onplaying?.();
+        return Promise.resolve();
+      }
+      pause() {}
+      removeAttribute() {}
+      load() {}
+    },
+  });
+  t.after(() => {
+    for (const [name, value] of [
+      ["window", originalWindow],
+      ["Audio", originalAudio],
+    ] as const) {
+      if (value) Object.defineProperty(globalThis, name, value);
+      else delete (globalThis as any)[name];
+    }
+  });
+  const text =
+      "Первая фраза. " +
+      Array.from(
+        { length: 12 },
+        (_, i) => `Продолжение номер ${i} без обрезки.`,
+      ).join(" "),
+    controller = new AbortController();
+  const playback = createBrowserVoiceDriver(new AudioCache())(
+    text,
+    { ...options, provider: "local", rate: 1.25 },
+    controller.signal,
+    () => {},
+  );
+  await flush();
+  assert.equal(audios.length, 1);
+  assert.equal(spoken.length, 2); // Second phrase ready before the first ends.
+  for (let i = 0; i < 30; i++) {
+    audios[i]?.onended?.();
+    await flush();
+    if (spoken.join(" ") === text && i >= audios.length - 1) break;
+  }
+  await playback;
+  assert.equal(spoken.join(" "), text);
+  assert.equal(stops, 0);
+});

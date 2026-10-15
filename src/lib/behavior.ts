@@ -42,14 +42,6 @@ export function chooseAside(
 export function isApology(text: string) {
   return /вернись|прости|извини/i.test(text);
 }
-export function shortAside(text: string) {
-  const sentence = text.trim().split(/(?<=[.!?…])\s/)[0];
-  if (sentence.length <= 150) return sentence;
-  const cut = sentence.slice(0, 147);
-  const boundary = cut.lastIndexOf(" ");
-  return `${cut.slice(0, boundary > 90 ? boundary : cut.length)}…`;
-}
-
 export function requestsGentle(text: string) {
   return /без (подколов|мата|оскорблений)|не (подкалывай|оскорбляй|издевайся)|хватит (подколов|оскорблений)|прекрати (подколы|оскорблять)|stop roasting/i.test(
     text,

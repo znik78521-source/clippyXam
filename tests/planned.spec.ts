@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-test("saved preferences restore without chat/key leakage; startup changes only on Apply", async ({
+test("saved preferences restore without chat/key leakage; startup changes only on explicit consent; preferences autosave", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -71,13 +71,17 @@ test("saved preferences restore without chat/key leakage; startup changes only o
   await expect(startup).toBeEnabled();
   await expect(startup).not.toBeChecked();
   await startup.check();
-  await page.getByRole("button", { name: "Отмена", exact: true }).click();
-  expect(await page.evaluate(() => (window as any).__startup)).toEqual([]);
-  await page.getByRole("button", { name: "Настройки", exact: true }).click();
-  await startup.check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__startup))
+    .toEqual([true]);
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("rover");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__saved.at(-1)?.character))
+    .toBe("rover");
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("merlin");
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  expect(await page.evaluate(() => (window as any).__startup)).toEqual([true]);
   const saved = await page.evaluate(() => (window as any).__saved);
   expect(saved.length).toBeGreaterThan(0);
   expect(JSON.stringify(saved)).not.toContain("secret-test-key");
@@ -87,7 +91,7 @@ test("saved preferences restore without chat/key leakage; startup changes only o
   await page.getByRole("button", { name: "Настройки", exact: true }).click();
   await expect(startup).toBeChecked();
   await startup.uncheck();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).__startup)).toEqual([
     true,
@@ -183,50 +187,37 @@ test("widget publishes actual sprite alpha and retains controls; safety errors a
     page.getByRole("textbox", { name: "Сообщение маскоту" }),
   ).toBeVisible();
 });
-test("speech envelope moves original sprite only during playback and respects reduced motion", async ({
+test("window direction and each typed letter change original frames; reduced motion disables reactions", async ({
   page,
 }) => {
   await page.addInitScript(() => {
-    let update: (value: any) => void = () => {};
-    const snapshot: any = {
-      character: "clippy",
-      phase: "speaking",
-      animationMood: "speaking",
-      bubble: "Говорю",
-      error: "",
-      notice: "",
-      pending: false,
-      sound: true,
-      speechBusy: true,
-      speaking: true,
-      quiet: false,
-      away: false,
-      seconds: 0,
-      speechLevel: 0,
-    };
+    let move = (v: any) => {};
     Object.assign(window, {
-      __level: (level: number) => update({ ...snapshot, speechLevel: level }),
+      __move: (direction: string) => move({ direction, serial: Date.now() }),
     });
     window.clippyCompanion = {
       ready: async () => true,
-      getSnapshot: async () => snapshot,
-      onSnapshot: (fn) => {
-        update = fn;
+      getSnapshot: async () => ({
+        character: "clippy",
+        phase: "idle",
+        animationMood: "idle",
+        bubble: "Тест",
+        error: "",
+        notice: "",
+        pending: false,
+        sound: false,
+        speechBusy: false,
+        speaking: false,
+        quiet: false,
+        away: false,
+        seconds: 0,
+      }),
+      onSnapshot: () => () => {},
+      action: async () => true,
+      onWindowMotion: (fn) => {
+        move = fn;
         return () => {};
       },
-      action: async () => true,
-      getPointerState: async () => ({
-        available: false,
-        enabled: false,
-        error: "",
-      }),
-      onPointerState: () => () => {},
-      publishHitMap: () => {},
-      setPointerPassthrough: async () => ({
-        available: false,
-        enabled: false,
-        error: "",
-      }),
       startDictation: async () => "",
       stopDictation: async () => {},
     };
@@ -234,15 +225,126 @@ test("speech envelope moves original sprite only during playback and respects re
   await page.goto("/");
   const canvas = page.locator(".mascot-canvas");
   await expect(canvas).toBeVisible();
-  await page.evaluate(() => (window as any).__level(1));
-  await expect(canvas).toHaveAttribute("data-speech-level", "1");
-  await expect
-    .poll(() => canvas.evaluate((c) => getComputedStyle(c).transform))
-    .not.toBe("none");
+  await page.clock.install();
+  const rest = await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  const images = new Set<string>();
+  for (const direction of ["left", "right", "up", "down"]) {
+    await page.evaluate((d) => (window as any).__move(d), direction);
+    await page.clock.runFor(850);
+    images.add(await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL()));
+    expect(await canvas.evaluate((c) => getComputedStyle(c).transform)).toBe(
+      "none",
+    );
+  }
+  expect(images.size).toBe(4);
+  expect(images.has(rest)).toBe(false);
+  await page.evaluate(() => (window as any).__move("still"));
+  await page.clock.runFor(1000);
+  const input = page.getByRole("textbox", { name: "Сообщение маскоту" });
+  for (const letter of ["п", "р", "и"]) {
+    await input.pressSequentially(letter);
+    await page.clock.runFor(40);
+    expect(
+      await canvas.evaluate((c) => getComputedStyle(c).transform),
+    ).not.toBe("none");
+    await page.clock.runFor(250);
+    expect(await canvas.evaluate((c) => getComputedStyle(c).transform)).toBe(
+      "none",
+    );
+  }
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(() => (window as any).__move("left"));
+  await input.pressSequentially("в");
+  await page.clock.runFor(100);
+  await expect(page.locator(".mascot-sprite")).toHaveAttribute(
+    "data-original-animation",
+    "RestPose",
+  );
+  expect(await canvas.evaluate((c) => getComputedStyle(c).transform)).toBe(
+    "none",
+  );
+});
+test("autosave serializes edits; failure stays visible and close flush retries latest draft", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = {
+      mini: false,
+      maximized: false,
+      minimized: false,
+      alwaysOnTop: false,
+      focused: true,
+    };
+    const update = async () => state;
+    Object.assign(window, {
+      __saved: [],
+      __saving: 0,
+      __hold: true,
+      __overlap: false,
+      __fail: false,
+    });
+    window.clippyDesktop = {
+      platform: "win32",
+      getState: update,
+      onState: () => () => {},
+      setCompanion: update,
+      publishCompanion: () => {},
+      onCompanionAction: () => () => {},
+      minimize: update,
+      toggleMaximize: update,
+      close: async () => {},
+      hideToTray: update,
+      setMini: update,
+      setAlwaysOnTop: update,
+      loadSavedKey: async () => ({ key: "test-key", warning: "" }),
+      saveKey: async () => {},
+      loadSettings: async () => ({ settings: {}, warning: "" }),
+      saveSettings: async (value) => {
+        const w = window as any;
+        if (w.__saving++) w.__overlap = true;
+        if (w.__hold) {
+          w.__hold = false;
+          await new Promise((resolve) => {
+            w.__release = resolve;
+          });
+        }
+        await new Promise((r) => setTimeout(r, 450));
+        w.__saving--;
+        if (w.__fail) throw Error("disk");
+        w.__saved.push(value);
+      },
+      openRouterRequest: async () => ({ status: 200, data: { data: [] } }),
+      openRouterCancel: async () => {},
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("merlin");
   await expect
-    .poll(() => canvas.evaluate((c) => getComputedStyle(c).transform))
-    .toBe("none");
-  await page.evaluate(() => (window as any).__level(0));
-  await expect(canvas).toHaveAttribute("data-speech-level", "0");
+    .poll(() => page.evaluate(() => (window as any).__saving))
+    .toBe(1);
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("rover");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => (window as any).__release());
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => (window as any).__saved.at(-1).character),
+  ).toBe("rover");
+  expect(await page.evaluate(() => (window as any).__overlap)).toBe(false);
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.evaluate(() => {
+    (window as any).__fail = true;
+  });
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("clippy");
+  await expect(page.getByRole("alert")).toContainText("Не удалось сохранить");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__fail = false;
+  });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(() => (window as any).__saved.at(-1).character),
+  ).toBe("clippy");
 });

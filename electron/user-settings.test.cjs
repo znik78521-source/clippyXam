@@ -69,3 +69,21 @@ test("invalid values and paid provider are not restored", () => {
   );
   assert.equal(sanitizeSettings({ rate: 1.4, autoFallback: false }).rate, 1.4);
 });
+test("0.7 preferences migrate to standard free router and faster speech once; new manual choice persists", async (t) => {
+  const f = await fixture(t);
+  await fs.writeFile(
+    f.file,
+    JSON.stringify({
+      model: "liquid/lfm-2.5-2.6b:free",
+      rate: 1,
+      character: "merlin",
+    }),
+  );
+  const migrated = (await f.store.load()).settings;
+  assert.equal(migrated.model, "openrouter/free");
+  assert.equal(migrated.rate, 1.25);
+  assert.equal(migrated.character, "merlin");
+  await f.store.save({ ...migrated, model: "qwen/qwen3-4b:free", rate: 1.5 });
+  assert.equal((await f.store.load()).settings.model, "qwen/qwen3-4b:free");
+  assert.equal((await f.store.load()).settings.rate, 1.5);
+});

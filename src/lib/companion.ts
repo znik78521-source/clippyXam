@@ -5,12 +5,14 @@ export interface CompanionSnapshot {
   character: CharacterId;
   speechLevel?: number | null;
   clickThrough?: boolean;
-  cinematic?: { kind: import("./cinematics").CinematicKind; id: number } | null;
+  animation?: { name: string; serial: number } | null;
+  autonomous?: boolean;
   sendResult?: { sequence: number; success: boolean; text?: string };
   phase: Mood;
   animationMood: Mood;
   bubble: string;
   error: string;
+  hasDiagnostic?: boolean;
   notice: string;
   highlight?: WordRange | null;
   pending: boolean;
@@ -58,6 +60,9 @@ export interface HitMap {
   rects: { x: number; y: number; width: number; height: number }[];
 }
 export interface CompanionBridge extends DictationBridge {
+  onWindowMotion?(
+    callback: (value: import("./useWindowMotion").WindowMotion) => void,
+  ): () => void;
   getPointerState(): Promise<PointerState>;
   setPointerPassthrough(value: boolean): Promise<PointerState>;
   publishHitMap(map: HitMap): void;

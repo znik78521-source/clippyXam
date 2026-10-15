@@ -1,5 +1,4 @@
 import { publicSettings } from "./lib/saved-settings";
-import { TransportError } from "./lib/openrouter-transport";
 import { useEffect, useRef, useState } from "react";
 import { CompanionScene } from "./components/CompanionScene";
 import TokenDialog from "./components/TokenDialog";
@@ -19,16 +18,10 @@ import { useDesktopWindow } from "./lib/desktop";
 import {
   chooseAside,
   isApology,
-  shortAside,
   requestsGentle,
   nextIrritation,
 } from "./lib/behavior";
 
-import {
-  chooseCinematic,
-  cinematicDuration,
-  type CinematicKind,
-} from "./lib/cinematics";
 import { useFreeModels } from "./lib/useFreeModels";
 import { useSpeech } from "./lib/useSpeech";
 import {
@@ -63,6 +56,7 @@ export default function App() {
 
   const [phase, setPhase] = useState<Mood>("idle");
   const [bubble, setBubble] = useState(characters[0].quip);
+  const lastReplyText = useRef(characters[0].quip);
   const [intensity, setIntensity] = useState<Intensity>("wild");
   const [sound, setSound] = useState(localVoiceAvailable);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -72,12 +66,12 @@ export default function App() {
     sound: localVoiceAvailable,
     widget: false,
     clickThrough: false,
-    speechMotion: true,
+    speechMotion: false,
     key: "",
     model: DEFAULT_MODEL,
     autoFallback: true,
     voice: "",
-    rate: 1,
+    rate: 1.25,
     ttsProvider: localVoiceAvailable ? "local" : "system",
     ttsKey: "",
     systemVoices: { ...defaultVoiceMap },
@@ -134,6 +128,7 @@ export default function App() {
         if (next) {
           setCharacter(next);
           setMessages([welcome(next)]);
+          lastReplyText.current = next.quip;
           setBubble(next.quip);
         }
         if (saved.intensity) setIntensity(saved.intensity);
@@ -150,25 +145,6 @@ export default function App() {
       active = false;
     };
   }, []);
-  useEffect(() => {
-    if (!preferencesLoaded || !keyLoaded || !window.clippyDesktop?.saveSettings)
-      return;
-    const timer = setTimeout(() => {
-      void window.clippyDesktop!.saveSettings!(
-        publicSettings({
-          ...settings,
-          character: character.id,
-          intensity,
-          sound,
-        }),
-      ).catch(() =>
-        setToast(
-          "Не удалось сохранить настройки. Проверь права записи в папку приложения.",
-        ),
-      );
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [preferencesLoaded, keyLoaded, settings, character.id, intensity, sound]);
   function persistKey(key: string) {
     void window.clippyDesktop
       ?.saveKey?.(key)
@@ -178,12 +154,12 @@ export default function App() {
         ),
       );
   }
-  const [cinematic, setCinematic] = useState<{
-    kind: CinematicKind;
-    id: number;
+  const [animation, setAnimation] = useState<{
+    name: string;
+    serial: number;
   } | null>(null);
-  const cinematicCounter = useRef(0),
-    lastCinematic = useRef(0);
+  const animationSerial = useRef(0),
+    lastDeparture = useRef(0);
   const [sendResult, setSendResult] = useState<{
     sequence: number;
     success: boolean;
@@ -262,7 +238,23 @@ export default function App() {
   }
 
   const intensityRef = useRef(intensity);
-  function changeIntensity(value: Intensity) {
+  function persistBehavior(
+    patch: Partial<Pick<SettingsData, "intensity" | "sound" | "character">>,
+  ) {
+    const value = {
+      ...settings,
+      character: character.id,
+      intensity,
+      sound,
+      ...patch,
+    };
+    setSettings(value);
+    void window.clippyDesktop
+      ?.saveSettings?.(publicSettings(value))
+      .catch(() => setToast("Не удалось сохранить настройки поведения."));
+  }
+  function changeIntensity(value: Intensity, persist = true) {
+    if (persist) persistBehavior({ intensity: value });
     intensityRef.current = value;
     setIntensity(value);
     if (value === "soft" && phase === "rude") {
@@ -271,26 +263,12 @@ export default function App() {
     }
   }
   function clearTimers() {
-    setCinematic(null);
+    setAnimation(null);
     timers.current.forEach(clearTimeout);
     timers.current = [];
   }
   function later(callback: () => void, delay: number) {
     timers.current.push(setTimeout(callback, delay));
-  }
-  function playCinematic(kind: CinematicKind) {
-    clearTimers();
-    lastCinematic.current = Date.now();
-    setCinematic({ kind, id: ++cinematicCounter.current });
-    const vanish = kind === "jail" || kind === "burrow";
-    if (vanish) {
-      setPhase("offended");
-      setAway(Date.now() + cinematicDuration[kind] + 9000);
-    }
-    later(() => {
-      setCinematic(null);
-      setPhase(awayRef.current > Date.now() ? "away" : "idle");
-    }, cinematicDuration[kind]);
   }
   function setAway(value: number) {
     awayRef.current = value;
@@ -318,29 +296,41 @@ export default function App() {
     setBubble("Ответ остановлен. Можешь написать другое сообщение.");
     setToast("Запрос отменён. Сообщение осталось в истории.");
   }
-  function goHome(
-    message = "Ладно, я вернулся. Скучал? Можешь не признаваться.",
-  ) {
+  function goHome() {
     clearTimers();
     if (awayRef.current) updateIrritation(irritationRef.current - 25);
     setAway(0);
     setSeconds(0);
     setPhase("idle");
-    setBubble(message);
+    setAnimation({
+      name: character.id === "clippy" ? "GetAttention" : "Show",
+      serial: ++animationSerial.current,
+    });
   }
-  function speak(content: string) {
-    if (!sound || isQuietTime(settings.companion)) return;
+  function speak(content: string, ready?: () => void) {
+    if (
+      !sound ||
+      isQuietTime(settings.companion) ||
+      (settings.ttsProvider === "local" && voiceState?.phase !== "ready")
+    ) {
+      ready?.();
+      return;
+    }
     const voice =
       settings.ttsProvider === "system"
         ? settings.systemVoices[character.id] || settings.voice
         : settings.cloudVoices[character.id];
-    speech.enqueue(content, {
-      provider: settings.ttsProvider,
-      key: settings.ttsKey,
-      voice,
-      rate: settings.rate,
-      character: character.id,
-    });
+    speech.enqueue(
+      content,
+      {
+        provider: settings.ttsProvider,
+        key: settings.ttsKey,
+        voice,
+        rate: settings.rate,
+        character: character.id,
+      },
+      ready,
+    );
   }
   function applyReply(incoming: Reply, forgiven = false) {
     const reply =
@@ -349,10 +339,15 @@ export default function App() {
         ? { ...incoming, mood: "speaking" as const }
         : incoming;
     clearTimers();
-    setBubble(reply.text);
-    speak(reply.text);
+    lastReplyText.current = reply.text;
+    speak(reply.text, () => setBubble(reply.text));
     if (forgiven) setAway(0);
-    if (reply.leaveSeconds > 0 && !forgiven) {
+    if (
+      reply.leaveSeconds > 0 &&
+      !forgiven &&
+      Date.now() - lastDeparture.current > 120000
+    ) {
+      lastDeparture.current = Date.now();
       setPhase("offended");
       setAway(Date.now() + reply.leaveSeconds * 1000);
       setSeconds(reply.leaveSeconds);
@@ -394,8 +389,8 @@ export default function App() {
 
     setError("");
     setPhase("idle");
+    lastReplyText.current = next.quip;
     setBubble(next.quip);
-    setModal(null);
   }
   async function send(provided?: string) {
     if (!preferencesLoaded || !keyLoaded) return;
@@ -404,6 +399,7 @@ export default function App() {
       setMinimized(false);
       return;
     }
+    const previousBubble = lastReplyText.current;
     const content = (provided ?? "").trim();
     if (!content || pending || request.current || content.length > 2000) return;
     const gentle = requestsGentle(content);
@@ -440,7 +436,7 @@ export default function App() {
           leaveSeconds: 0,
         };
       } else {
-        timeout = setTimeout(() => controller.abort("timeout"), 45000);
+        timeout = setTimeout(() => controller.abort("timeout"), 65000);
         reply = await requestReply({
           ...settings,
           character,
@@ -451,57 +447,10 @@ export default function App() {
           signal: controller.signal,
           away: awayRef.current > Date.now(),
           models: modelCatalog.models,
-          onAttempt: (attempt) => {
-            if (id !== requestId.current) return;
-            if (attempt.done) setToast(`Ответила: ${attempt.model}`);
-            else
-              setBubble(
-                `${attempt.reason ? attempt.reason + "\n" : ""}Пробую ${attempt.model} (${attempt.index}/${attempt.total})…`,
-              );
-          },
+          onAttempt: () => {},
         });
       }
       if (id !== requestId.current) return;
-      if (
-        irritationRef.current >= 85 &&
-        !awayRef.current &&
-        !gentle &&
-        !isApology(content)
-      ) {
-        reply = {
-          text:
-            effectiveIntensity === "soft"
-              ? "Мне нужна небольшая пауза. Скоро вернусь."
-              : "Заебал. Пойду за край окна — отдохну от твоего таланта раздражать.",
-          mood: "offended",
-          leaveSeconds: 20,
-        };
-      }
-      if (awayRef.current > Date.now() && !isApology(content) && !gentle) {
-        reply = {
-          ...reply,
-          text: shortAside(reply.text),
-          leaveSeconds: 0,
-        };
-      }
-      const scene = chooseCinematic({
-        text: content,
-        reply: reply.text,
-        previousReply:
-          [...messages]
-            .reverse()
-            .find((message) => message.role === "assistant")?.content || "",
-        intensity: effectiveIntensity,
-        allowRude: settings.companion.allowRude,
-        irritation: irritationRef.current,
-        quiet,
-        canRandom:
-          irritationRef.current >= 28 &&
-          Date.now() - lastCinematic.current > 15000 &&
-          !awayRef.current,
-      });
-      if (scene)
-        reply = { text: scene.text, mood: "speaking", leaveSeconds: 0 };
       setMessages((current) =>
         [
           ...current,
@@ -514,7 +463,6 @@ export default function App() {
         ].slice(-100),
       );
       applyReply(reply, isApology(content) || gentle);
-      if (scene) playCinematic(scene.kind);
       setSendResult({ sequence: id, success: true });
     } catch (cause) {
       if (id !== requestId.current) return;
@@ -538,11 +486,7 @@ export default function App() {
               : "Не удалось получить ответ.",
       );
       setPhase(awayRef.current > Date.now() ? "away" : "idle");
-      setBubble(
-        cause instanceof TransportError
-          ? "Не удалось связаться с OpenRouter. Причина указана ниже; смена модели тут не поможет."
-          : "Даже я иногда теряю связь. Давай попробуем ещё раз.",
-      );
+      setBubble(previousBubble);
     } finally {
       clearTimeout(timeout);
       if (id === requestId.current) {
@@ -587,6 +531,9 @@ export default function App() {
       !awayUntil ||
       phase !== "away" ||
       pending ||
+      speech.busy ||
+      modal ||
+      bubble.length > 250 ||
       quiet ||
       !settings.companion.backgroundQuips
     )
@@ -618,6 +565,9 @@ export default function App() {
     settings.rate,
     settings.companion,
     quiet,
+    speech.busy,
+    modal,
+    bubble,
   ]);
 
   useEffect(() => {
@@ -643,6 +593,7 @@ export default function App() {
       return;
     }
     setSound(!sound);
+    persistBehavior({ sound: !sound });
     if (sound) stopSpeech();
     else
       setToast(
@@ -663,23 +614,23 @@ export default function App() {
   const companionSnapshot: CompanionSnapshot = {
     character: character.id,
     clickThrough: settings.clickThrough,
-    speechLevel: settings.speechMotion && speech.speaking ? speech.level : null,
     sendResult,
-    cinematic,
+    animation,
+    autonomous:
+      settings.companion.backgroundQuips &&
+      !pending &&
+      !speech.busy &&
+      !quiet &&
+      !modal,
     phase,
     animationMood,
     bubble,
     highlight: spokenRange
       ? { start: spokenRange.start, end: spokenRange.end }
       : null,
-    error,
-    notice:
-      toast ||
-      (settings.ttsProvider === "local" && voiceState?.phase === "downloading"
-        ? `Скачивается русский голос: ${voiceState.progress}% (63 МБ, один раз)`
-        : settings.ttsProvider === "local" && voiceState?.phase === "error"
-          ? voiceState.error
-          : ""),
+    error: "",
+    hasDiagnostic: Boolean(error || toast || voiceState?.error),
+    notice: "",
     pending,
     sound,
     speechBusy: speech.busy,
@@ -723,7 +674,10 @@ export default function App() {
     if (action.type === "select-character") {
       const next = characters.find((item) => item.id === action.character);
       if (!next) return false;
-      if (next.id !== character.id) newChat(next);
+      if (next.id !== character.id) {
+        newChat(next);
+        persistBehavior({ character: next.id });
+      }
       return true;
     }
     if (action.type === "toggle-sound") {
@@ -766,19 +720,21 @@ export default function App() {
     awayUntil,
     seconds,
     settings.clickThrough,
-    settings.speechMotion,
-    speech.level,
     speech.progress,
     speech.busy,
     speech.speaking,
     voiceState,
     settings.ttsProvider,
     sendResult,
-    cinematic,
+    animation,
+    modal,
+    settings.companion.backgroundQuips,
   ]);
 
   async function saveSettings(value: SettingsData) {
     await window.clippyDesktop?.saveSettings?.(publicSettings(value));
+    if (value.key !== settings.key)
+      await window.clippyDesktop?.saveKey?.(value.key);
     cancelRequest();
     stopSpeech();
     clearTimers();
@@ -788,16 +744,20 @@ export default function App() {
       newChat(next, value.companion.rememberSession);
     if (!value.companion.rememberSession) threads.current = {};
     setSettings(value);
-    persistKey(value.key);
-    changeIntensity(value.intensity);
+    changeIntensity(value.intensity, false);
     setSound(value.sound);
     setPhase(awayRef.current > Date.now() ? "away" : "idle");
-    setModal(null);
     setError("");
-    if (desktop.native)
-      desktop.setCompanion(Boolean(value.widget && value.key.trim()));
-    else setFloating(Boolean(value.widget && value.key.trim()));
+    resumeWidget.current = Boolean(value.widget && value.key.trim());
   }
+  function closeSettings() {
+    setModal(null);
+    if (resumeWidget.current) {
+      if (desktop.native) desktop.setCompanion(true);
+      else setFloating(true);
+    }
+  }
+
   return (
     <main
       className={`nt-desktop ${desktop.native ? "nt-native" : ""} ${floating ? "nt-widget-preview" : ""}`}
@@ -839,28 +799,20 @@ export default function App() {
               character: character.id,
               intensity,
               sound,
-              widget:
-                resumeWidget.current ||
-                (desktop.native ? Boolean(desktop.state.companion) : floating),
+              widget: resumeWidget.current,
             }}
             voices={voices}
             localVoiceState={voiceState}
             modelCatalog={modelCatalog}
-            onPreview={(kind) => {
-              setModal(null);
-              setBubble(
-                "Мемная сценка. Только пиксели — никаких действий с системой.",
-              );
-              playCinematic(kind);
+            diagnostic={[error, toast, voiceState?.error]
+              .filter(Boolean)
+              .join("\n")}
+            onPreview={(name) => {
+              closeSettings();
+              setAnimation({ name, serial: ++animationSerial.current });
             }}
             onSave={saveSettings}
-            onClose={() => {
-              setModal(null);
-              if (resumeWidget.current) {
-                if (desktop.native) desktop.setCompanion(true);
-                else setFloating(true);
-              }
-            }}
+            onClose={closeSettings}
           />
         )
       )}

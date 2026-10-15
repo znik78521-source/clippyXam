@@ -34,7 +34,7 @@ test("handles plain text, malformed JSON, null, and empty replies", () => {
   assert.throws(() => parseReply("null"), /пустой ответ/);
   assert.throws(() => parseReply("{broken}"), /пустой ответ/);
   assert.throws(() => parseReply(""), /пустой ответ/);
-  assert.equal(parseReply("a".repeat(3000)).text.length, 2500);
+  assert.equal(parseReply("a".repeat(3000)).text.length, 3000);
 });
 test("API sends credentials only to OpenRouter, bounds history and soft gestures", async (t) => {
   let payload: Record<string, any> = {};
@@ -75,7 +75,7 @@ test("API sends credentials only to OpenRouter, bounds history and soft gestures
     sort: "latency",
     max_price: { prompt: 0, completion: 0 },
   });
-  assert.equal(payload.max_tokens, 400);
+  assert.equal(payload.max_tokens, 2048);
   assert.equal(payload.messages.length, 2);
   assert.equal(payload.messages[0].role, "system");
   assert.equal(

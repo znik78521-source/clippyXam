@@ -3,7 +3,6 @@ import { AudioCache, createBrowserVoiceDriver, SpeechQueue } from "./speech";
 import type { SpeechProgress } from "./speech-progress";
 import type { VoiceOptions } from "./speech";
 export function useSpeech(reportError: (message: string) => void) {
-  const [level, setLevel] = useState<number | null>(null);
   const [progress, setProgress] = useState<SpeechProgress | null>(null);
   const [activity, setActivity] = useState({ busy: false, speaking: false });
   const queueRef = useRef<SpeechQueue | null>(null);
@@ -22,15 +21,12 @@ export function useSpeech(reportError: (message: string) => void) {
       (value) => {
         if (active) setProgress(value);
       },
-      (value) => {
-        if (active) setLevel(value);
-      },
     );
     cacheRef.current = cache;
     queueRef.current = queue;
     return () => {
       active = false;
-      queue.stop();
+      queue.stop(false);
       cache.clear();
       queueRef.current = null;
       cacheRef.current = null;
@@ -39,9 +35,8 @@ export function useSpeech(reportError: (message: string) => void) {
   return {
     ...activity,
     progress,
-    level,
-    enqueue: (text: string, options: VoiceOptions) =>
-      queueRef.current?.enqueue(text, options),
+    enqueue: (text: string, options: VoiceOptions, ready?: () => void) =>
+      queueRef.current?.enqueue(text, options, ready),
     stop: () => queueRef.current?.stop(),
     clearCache: () => cacheRef.current?.clear(),
   };

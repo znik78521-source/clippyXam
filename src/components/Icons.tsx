@@ -1,4 +1,3 @@
-import type { CharacterId } from "../lib/characters";
 export function WindowsMark() {
   return (
     <svg viewBox="0 0 40 36" className="windows-mark" aria-hidden="true">
@@ -60,67 +59,6 @@ export function TrashIcon() {
         stroke="#27824e"
         strokeWidth="2"
       />
-    </svg>
-  );
-}
-export function RudeHand({
-  character = "clippy",
-}: {
-  character?: CharacterId;
-}) {
-  const fur = character === "rover";
-  const wizard = character === "merlin";
-  return (
-    <svg
-      className="rude-hand"
-      data-character={character}
-      viewBox="0 0 80 105"
-      role="img"
-      aria-label={`Средний палец — новый жест ${character}`}
-    >
-      <path
-        d="M27 89L17 72 9 61q-5-11 5-13 5 0 11 8V15q0-11 9-11t9 11v29q9-10 16 1 10-6 14 7v23L62 91v10H27z"
-        fill={fur ? "#efb440" : wizard ? "#ead3b9" : "#e5e9e8"}
-        stroke={fur ? "#795323" : "#373843"}
-        strokeWidth="3.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M43 44v22m15-18v19M25 56l9 11m-6 23h32"
-        fill="none"
-        stroke={fur ? "#b77b29" : wizard ? "#b3947f" : "#8a9a9f"}
-        strokeWidth="2.5"
-      />
-      <path
-        d="M28 101h32v-9H28z"
-        fill={fur ? "#a8622d" : wizard ? "#30327d" : "#7b96a2"}
-        stroke={fur ? "#795323" : "#373843"}
-        strokeWidth="3"
-      />
-      {fur && (
-        <>
-          <ellipse
-            cx="44"
-            cy="75"
-            rx="11"
-            ry="9"
-            fill="#9b652c"
-            opacity=".65"
-          />
-          <path
-            d="m30 89 5-5 5 5 5-5 5 5 5-5"
-            stroke="#70451f"
-            fill="none"
-            strokeWidth="2"
-          />
-        </>
-      )}
-      {wizard && (
-        <path
-          d="m43 91 2 3 4 .4-3 2.5.8 4-3.8-2-3.5 2 .7-4-3-2.5 4-.4z"
-          fill="#f4d457"
-        />
-      )}
     </svg>
   );
 }

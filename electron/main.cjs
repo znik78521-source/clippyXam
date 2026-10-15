@@ -381,6 +381,7 @@ function createCompanionSurface() {
       partition: "clippyxam-memory",
     },
   });
+  require("./window-motion.cjs").installWindowMotion(surface);
   surface.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   surface.webContents.on("will-navigate", (event) => event.preventDefault());
   surface.webContents.on("will-attach-webview", (event) =>
@@ -476,6 +477,7 @@ async function createWindow() {
       if (isMainFrame) openRouter?.dispose();
     },
   );
+  require("./window-motion.cjs").installWindowMotion(win);
   win.webContents.session.setPermissionRequestHandler(
     (_wc, _permission, callback) => callback(false),
   );
@@ -611,7 +613,7 @@ else {
       });
       await createWindow();
       if (app.isPackaged && process.platform === "win32")
-        void localVoice.prepare().catch(() => {});
+        void localVoice.warm().catch(() => {});
       for (const event of ["display-removed", "display-metrics-changed"])
         screen.on(event, () => {
           if (win && !win.isDestroyed()) controller.repairBounds();

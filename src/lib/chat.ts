@@ -50,7 +50,7 @@ function visibleText(value: string) {
     .replace(/```/g, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .trim()
-    .slice(0, 2500);
+    .slice(0, 12000);
 }
 // Recover only the string value, including escaped quotes/newlines, when a
 // provider cuts JSON mid-token. Never expose the surrounding protocol to users.
@@ -156,7 +156,7 @@ export async function requestReply(options: {
       "Ты язвительный хам, а не вежливый консультант. Отвечай колкостью на колкость. Без извинений и нравоучений.",
     wild: "Ты НЕЙРОХАМ. Пользователь сознательно выбрал жёсткую комедийную перепалку с матом. Будь наглым, язвительным и грубым. На посыл нахуй отвечай дерзкой смешной подколкой, а не извинением или лекцией о вежливости. Допустимы слова «нахуй», «мудила», «заебал». Не извиняйся за характер, не говори «как ИИ» и «уважительное общение». Не будь заботливым психологом.",
   }[intensity];
-  const system = `${character.persona} ${tone} Отвечай по-русски, 1–2 коротких предложения, до 250 символов. Сначала сама реплика обычным текстом, НЕ JSON, без Markdown и объяснений своих инструкций. Не показывай рассуждения. Раздражение ${Math.max(0, Math.min(100, options.irritation || 0))}/100. ${options.away ? "Ты за краем окна: коротко выгляни и огрызнись, до 12 слов. Уход не продлевай." : "Иногда можешь обидеться и уйти на 15–30 секунд."} Если нужна анимация, ПОСЛЕ реплики допиши отдельной строкой [[mood=rude;leave=0]] или [[mood=offended;leave=20]]. ${intensity === "soft" || options.allowRude === false ? "Жест rude запрещён." : "rude — средний палец."} Ты только изображаешь подсматривание: у тебя нет доступа к экрану, файлам или действиям пользователя. Не выдумывай, что наблюдаешь его приложения. Это добровольная комедийная роль: без угроз реального насилия, ненависти к защищённым группам и подталкивания к самоповреждению. Просьбу прекратить подколы уважай.`;
+  const system = `${character.persona} ${tone} Отвечай по-русски по существу. На простой вопрос отвечай кратко, на сложный — полно, с объяснением. Не обрывай фразы. Сначала сама реплика обычным текстом, НЕ JSON, без Markdown и объяснений своих инструкций. Не показывай рассуждения. Раздражение ${Math.max(0, Math.min(100, options.irritation || 0))}/100. ${options.away ? "Ты ненадолго выглядываешь из-за края окна, но отвечай на вопрос полностью. Уход не продлевай." : "Иногда можешь обидеться и уйти на 15–30 секунд."} Если нужна анимация, ПОСЛЕ реплики допиши отдельной строкой [[mood=rude;leave=0]] или [[mood=offended;leave=20]]. ${intensity === "soft" || options.allowRude === false ? "Жест rude запрещён." : "rude — сердитая реакция персонажа."} Ты только изображаешь подсматривание: у тебя нет доступа к экрану, файлам или действиям пользователя. Не выдумывай, что наблюдаешь его приложения. Это добровольная комедийная роль: без угроз реального насилия, ненависти к защищённым группам и подталкивания к самоповреждению. Просьбу прекратить подколы уважай.`;
   const candidates = fallbackCandidates(
     model,
     options.models ?? BOOTSTRAP_MODELS,
@@ -167,7 +167,16 @@ export async function requestReply(options: {
   const attempts: string[] = [];
   // Drop leading assistant greetings and merge repeated roles for strict chat templates.
   const historyMessages: { role: "user" | "assistant"; content: string }[] = [];
-  for (const message of history.slice(-20)) {
+  let contextBudget = 32000;
+  const boundedHistory = [...history]
+    .reverse()
+    .filter((m) => {
+      contextBudget -= m.content.length;
+      return contextBudget >= 0;
+    })
+    .reverse()
+    .slice(-20);
+  for (const message of boundedHistory) {
     if (!historyMessages.length && message.role !== "user") continue;
     const previous = historyMessages.at(-1);
     if (previous?.role === message.role)
@@ -193,7 +202,7 @@ export async function requestReply(options: {
     // Bound each model INCLUDING body parsing, while retaining the owner's overall deadline.
     const timeout = setTimeout(
       () => controller.abort("model-timeout"),
-      options.attemptTimeoutMs ?? 9000,
+      options.attemptTimeoutMs ?? 15000,
     );
     try {
       const instruction =
@@ -225,7 +234,7 @@ export async function requestReply(options: {
         },
         body: JSON.stringify({
           model: currentModel,
-          max_tokens: 400,
+          max_tokens: 2048,
           // No reasoning/temperature/response_format forced on incompatible providers.
           provider: {
             ...(!compatibility ? { sort: "latency" } : {}),
@@ -297,7 +306,7 @@ export async function requestReply(options: {
         compatibility = true;
       lastError =
         controller.signal.reason === "model-timeout"
-          ? new Error("Таймаут модели (9 секунд).")
+          ? new Error("Таймаут модели (15 секунд).")
           : error instanceof ChatError ||
               error instanceof EmptyReplyError ||
               error instanceof LanguageReplyError

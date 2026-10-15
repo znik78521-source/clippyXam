@@ -62,7 +62,7 @@ test("keyless native owner restores onboarding, caption/widget commands and dict
   await page
     .getByRole("checkbox", { name: "Виджет на рабочем столе", exact: true })
     .check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   expect(await page.evaluate(() => (window as any).__nativeCalls)).toEqual([
     "widget:false",
     "mic",
@@ -313,8 +313,18 @@ test("desktop chat and catalogue use native bridge; DNS failure is explicit and 
   const composer = page.getByRole("textbox", { name: "Сообщение маскоту" });
   await composer.fill("Ну привет");
   await composer.press("Enter");
-  await expect(page.getByRole("alert")).toContainText("[DNS]");
+  await expect(
+    page.getByRole("button", { name: "Настройки", exact: true }),
+  ).toHaveAttribute("data-diagnostic", "true");
+  await expect(page.locator(".nt-balloon")).not.toContainText("[DNS]");
   await expect(composer).toHaveValue("Ну привет");
   expect(await page.evaluate(() => (window as any).__chatCalls())).toBe(1);
   expect(direct).toBe(0);
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page
+    .getByText("Диагностика подключения и голоса", { exact: true })
+    .click();
+  await expect(page.locator(".connection-diagnostic pre")).toContainText(
+    "[DNS]",
+  );
 });

@@ -44,8 +44,9 @@ async function fixture(t, fetchImpl) {
       assert.equal(opts.shell, undefined);
       child = new EventEmitter();
       child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
       child.stdin = new EventEmitter();
-      child.stdin.end = (text) => {
+      child.stdin.write = (text) => {
         child.text = text;
       };
       child.kill = () => {
@@ -92,7 +93,10 @@ test("speech uses stdin, returns a WAV, enforces ownership and rejects invalid i
   f.voice.stop(other);
   assert.equal(f.child.killed, undefined);
   f.child.stdout.emit("data", Buffer.from([1, 2, 3, 4]));
-  f.child.emit("close", 0);
+  f.child.stderr.emit(
+    "data",
+    Buffer.from(`Real-time factor: 1 (infer=1 sec, audio=${2 / 22050} sec)\n`),
+  );
   const wav = await p;
   assert.equal(wav.toString("ascii", 0, 4), "RIFF");
   assert.equal(wav.length, 48);
@@ -127,4 +131,31 @@ test("WAV headers and manifest checks do not trust arbitrary bytes", () => {
       .digest("hex");
   assert.equal(validFile(bytes, { size: 1, gitSha1 }), true);
   assert.equal(validFile(Buffer.from("y"), { size: 1, gitSha1 }), false);
+});
+test("warm Piper reuses process and frames PCM even when stderr arrives before stdout", async (t) => {
+  const f = await fixture(t);
+  await f.voice.warm(1.25);
+  const child = f.child;
+  const owner = new EventEmitter();
+  const first = f.voice.synthesize(owner, "Первое", 1.25);
+  await new Promise((r) => setImmediate(r));
+  child.stderr.emit(
+    "data",
+    Buffer.from(`Real-time factor: 1 (infer=1 sec, audio=${2 / 22050} sec)\n`),
+  );
+  child.stdout.emit("data", Buffer.from([1, 2, 3, 4]));
+  assert.equal((await first).length, 48);
+  assert.equal(child.killed, undefined);
+  const second = f.voice.synthesize(owner, "Второе", 1.25);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(f.child, child);
+  child.stdout.emit("data", Buffer.from([5, 6, 7, 8]));
+  child.stderr.emit(
+    "data",
+    Buffer.from(`Real-time factor: 1 (infer=1 sec, audio=${4 / 22050} sec)\n`),
+  );
+  assert.equal((await second).length, 48);
+  assert.equal(child.killed, undefined);
+  f.voice.dispose();
+  assert.equal(child.killed, true);
 });

@@ -19,6 +19,9 @@ export interface LocalVoiceState {
   error: string;
 }
 export interface DesktopBridge extends DictationBridge {
+  onWindowMotion?(
+    callback: (value: import("./useWindowMotion").WindowMotion) => void,
+  ): () => void;
   openRouterRequest?(input: NativeRequest): Promise<NativeResult>;
   openRouterCancel?(id: string): Promise<void>;
   loadSettings?(): Promise<{ settings: SavedSettings; warning: string }>;

@@ -54,7 +54,7 @@ test("catalog fetch is public without credentials and respects cancellation", as
   });
   assert.equal((await fetchFreeModels(signal))[0].id, "x/4b:free");
 });
-test("candidate ordering preserves choice, removes duplicates and always ends with free router", () => {
+test("standard router is first, respects manual choice, and excludes Liquid", () => {
   const models = [
     ...BOOTSTRAP_MODELS,
     ...BOOTSTRAP_MODELS,
@@ -62,17 +62,20 @@ test("candidate ordering preserves choice, removes duplicates and always ends wi
   ];
   assert.deepEqual(fallbackCandidates("chosen/model:free", models), [
     "chosen/model:free",
+    DEFAULT_MODEL,
     BOOTSTRAP_MODELS[0].id,
     BOOTSTRAP_MODELS[1].id,
-    DEFAULT_MODEL,
   ]);
-  assert.equal(
-    fallbackCandidates(DEFAULT_MODEL, models)[0],
-    BOOTSTRAP_MODELS[0].id,
-  );
+  assert.equal(fallbackCandidates(DEFAULT_MODEL, models)[0], DEFAULT_MODEL);
   assert.deepEqual(fallbackCandidates(DEFAULT_MODEL, []), [DEFAULT_MODEL]);
   assert.deepEqual(fallbackCandidates("chosen/model:free", models, false), [
     "chosen/model:free",
   ]);
   assert.throws(() => fallbackCandidates("paid/model", models));
+  assert.ok(
+    fallbackCandidates("liquid/lfm-2.5-2.6b:free", [
+      ...models,
+      { id: "liquid/test:free", name: "Liquid", group: "fast" },
+    ]).every((id) => !id.startsWith("liquid/")),
+  );
 });

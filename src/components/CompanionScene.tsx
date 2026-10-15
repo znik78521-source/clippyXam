@@ -1,10 +1,8 @@
+import { useWindowMotion } from "../lib/useWindowMotion";
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Settings, Minus, X, Maximize2 } from "lucide-react";
 import Mascot from "./Mascot";
-import Cinematic from "./Cinematic";
-import PeekAnimation from "./PeekAnimation";
 import SpeechText from "./SpeechText";
-import { RudeHand } from "./Icons";
 import { useDictation } from "../lib/useDictation";
 import type { CompanionAction, CompanionSnapshot } from "../lib/companion";
 
@@ -21,6 +19,8 @@ export function CompanionScene({
   native?: boolean;
   inactive?: boolean;
 }) {
+  const motion = useWindowMotion();
+  const [typingPulse, setTypingPulse] = useState(0);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -135,21 +135,19 @@ export function CompanionScene({
       <div
         className={`nt-stage phase-${snapshot.phase}`}
         data-away={snapshot.away}
-        data-cinematic={snapshot.cinematic?.kind}
       >
         <div className="nt-balloon" data-companion-hit role="status">
-          {snapshot.phase === "away" ? (
-            <span>
-              Ушёл остыть. Вернётся через {snapshot.seconds} с.{" "}
+          <SpeechText text={snapshot.bubble} range={snapshot.highlight} />
+          {snapshot.phase === "away" && (
+            <div className="nt-away-note">
+              Вернётся через {snapshot.seconds} с.{" "}
               <button
                 className="nt-text-button"
                 onClick={() => void act({ type: "return" })}
               >
                 Позвать
               </button>
-            </span>
-          ) : (
-            <SpeechText text={snapshot.bubble} range={snapshot.highlight} />
+            </div>
           )}
           {snapshot.speechBusy && (
             <button
@@ -163,30 +161,16 @@ export function CompanionScene({
           )}
         </div>
         <div className="nt-actor" data-companion-hit>
-          <PeekAnimation
-            active={
-              snapshot.phase === "peeking" ||
-              (snapshot.phase === "rude" && snapshot.away)
-            }
-            rude={snapshot.phase === "rude"}
-          >
-            <Mascot
-              id={snapshot.character}
-              speechLevel={snapshot.speechLevel}
-              mood={snapshot.animationMood}
-              size={snapshot.character === "clippy" ? 205 : 176}
-            />
-            {snapshot.phase === "rude" && (
-              <RudeHand character={snapshot.character} />
-            )}
-          </PeekAnimation>
-        </div>
-        {snapshot.cinematic && (
-          <Cinematic
-            key={snapshot.cinematic.id}
-            kind={snapshot.cinematic.kind}
+          <Mascot
+            id={snapshot.character}
+            mood={snapshot.animationMood}
+            size={snapshot.character === "clippy" ? 205 : 176}
+            autonomous={snapshot.autonomous}
+            animation={snapshot.animation}
+            typingPulse={typingPulse}
+            motion={motion}
           />
-        )}
+        </div>
       </div>
       <footer className="nt-composer" data-companion-hit>
         {(error || snapshot.error || snapshot.notice) && (
@@ -233,7 +217,12 @@ export function CompanionScene({
             }
             maxLength={2000}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (!(e.nativeEvent as InputEvent).isComposing)
+                setTypingPulse((p) => p + 1);
+            }}
+            onCompositionEnd={() => setTypingPulse((p) => p + 1)}
           />
           {snapshot.pending && (
             <button
@@ -268,13 +257,21 @@ export function CompanionScene({
           <button
             type="button"
             aria-label="Настройки"
-            title="Настройки"
+            title={
+              snapshot.hasDiagnostic
+                ? "Настройки: есть диагностика"
+                : "Настройки"
+            }
+            data-diagnostic={Boolean(snapshot.hasDiagnostic)}
             onClick={() => {
               dictation.stop();
               void act({ type: widget ? "settings-widget" : "settings" });
             }}
           >
             <Settings size={15} />
+            {snapshot.hasDiagnostic && (
+              <span className="diagnostic-dot" aria-hidden="true" />
+            )}
           </button>
         </form>
       </footer>

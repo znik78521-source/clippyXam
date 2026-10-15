@@ -3,10 +3,18 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld(
   "clippyDesktop",
   Object.freeze({
+    onWindowMotion: (callback) => {
+      if (typeof callback !== "function")
+        throw new TypeError("Callback required");
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on("window:motion", listener);
+      return () => ipcRenderer.removeListener("window:motion", listener);
+    },
     startDictation: () => ipcRenderer.invoke("dictation:start"),
     stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     platform: process.platform,
-    openRouterRequest: (input) => ipcRenderer.invoke("openrouter:request", input),
+    openRouterRequest: (input) =>
+      ipcRenderer.invoke("openrouter:request", input),
     openRouterCancel: (id) => ipcRenderer.invoke("openrouter:cancel", id),
     loadSettings: () => ipcRenderer.invoke("preferences:load"),
     saveSettings: (value) => ipcRenderer.invoke("preferences:save", value),

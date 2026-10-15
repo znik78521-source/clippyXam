@@ -193,7 +193,7 @@ try {
   await page
     .getByLabel("Пропускать клики через прозрачные участки виджета")
     .check();
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
 
   const nativeChats = await app.evaluate(() => globalThis.__nativeChats);
   expect(nativeChats).toHaveLength(1);
@@ -212,7 +212,7 @@ try {
     .getByRole("checkbox", { name: "Виджет на рабочем столе", exact: true })
     .check();
   const windowPromise = app.waitForEvent("window", { timeout: 30000 });
-  await page.getByRole("button", { name: "Применить", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   const widget = await windowPromise;
   await expect(
     widget.getByRole("textbox", { name: "Сообщение маскоту" }),
@@ -238,7 +238,7 @@ try {
     page.getByRole("dialog", { name: "Свойства: clippyXam" }),
   ).toBeVisible();
   const nextWindow = app.waitForEvent("window", { timeout: 30000 });
-  await page.getByRole("button", { name: "Отмена", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   const restoredWidget = await nextWindow;
   await expect(
     restoredWidget.getByRole("textbox", { name: "Сообщение маскоту" }),
@@ -262,7 +262,7 @@ try {
   await expect(
     page.getByLabel("Пропускать клики через прозрачные участки виджета"),
   ).toBeChecked();
-  await page.getByRole("button", { name: "Отмена", exact: true }).click();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   expect(errors).toEqual([]);
   console.log(
     "Packaged Windows smoke passed: production scheme/assets, onboarding, mocked chat, widget/settings/restore, portable profile.",

@@ -635,422 +635,74 @@ legend svg {
     max-height: 65px;
   }
 }
-/* Authored cheap retro screen gags. All overlays are clipped to the stage,
-   ignore pointer input and never call any OS operation. */
-.cinematic {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 5;
-  overflow: hidden;
-  image-rendering: pixelated;
-}
-.meme-bat {
-  position: absolute;
-  width: 145px;
-  height: 200px;
-  left: 45%;
-  top: 31%;
-  transform-origin: 15% 90%;
-  animation: bat-swing 3.3s steps(8, end) both;
-}
-@keyframes bat-swing {
-  0% {
-    transform: rotate(25deg);
-  }
-  25% {
-    transform: rotate(-115deg);
-  }
-  34% {
-    transform: rotate(-130deg);
-  }
-  45%,
-  70% {
-    transform: rotate(55deg);
-  }
-  100% {
-    transform: translateY(260px) rotate(80deg);
-  }
-}
-.meme-cracks {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  animation: crack-hit 3.3s steps(1) both;
-}
-@keyframes crack-hit {
-  0%,
-  43% {
-    opacity: 0;
-  }
-  44%,
-  88% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-.meme-pow {
-  position: absolute;
-  left: 23%;
-  top: 43%;
-  color: #ffe537;
-  text-shadow: 2px 2px #000;
-  font: bold 29px monospace;
-  rotate: -14deg;
-  animation: crack-hit 3.3s steps(1) both;
-}
-.nt-stage[data-cinematic="bat"] {
-  animation: screen-thump 3.3s steps(1);
-}
-@keyframes screen-thump {
-  44%,
-  48% {
-    translate: -3px 2px;
-  }
-  46%,
-  50% {
-    translate: 3px -2px;
-  }
-  52% {
-    translate: 0;
-  }
-}
-.meme-nozzle {
-  position: absolute;
-  width: 98px;
-  height: 70px;
-  bottom: 37px;
-  left: 46%;
-  rotate: -42deg;
-  animation: nozzle 3.4s steps(5) both;
-}
-@keyframes nozzle {
-  0%,
-  100% {
-    translate: 0 180px;
-  }
-  20%,
-  84% {
-    translate: 0 0;
-  }
-}
-.meme-fire {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform-origin: 50% 80%;
-  animation: flame-spurt 3.4s steps(6) both;
-}
-@keyframes flame-spurt {
-  0%,
-  23%,
-  100% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  35% {
-    transform: scale(0.7);
-    opacity: 0.9;
-  }
-  48% {
-    transform: scale(1.1);
-  }
-  62% {
-    transform: scale(0.88);
-  }
-  78% {
-    transform: scale(1.2);
-    opacity: 0.9;
-  }
-  93% {
-    transform: scale(0.2);
-    opacity: 0;
-  }
-}
-.nt-stage[data-cinematic="rage"] .nt-actor {
-  animation: angry-hop 3s steps(8) both;
-}
-@keyframes angry-hop {
-  0%,
-  20%,
-  40%,
-  60%,
-  80%,
-  100% {
-    margin-bottom: 0;
-  }
-  10%,
-  30%,
-  50%,
-  70%,
-  90% {
-    margin-bottom: 32px;
-  }
-}
-.meme-stars {
-  position: absolute;
-  left: 50%;
-  bottom: 90px;
-}
-.meme-stars b {
-  position: absolute;
-  font: bold 36px monospace;
-  color: #bd290f;
-  text-shadow: 1px 1px white;
-  animation: angry-star 1s steps(5) 3;
-  animation-delay: calc(var(--i) * 0.04s);
-}
-@keyframes angry-star {
-  from {
-    translate: 0 0;
-    opacity: 1;
-  }
-  to {
-    translate: var(--x) var(--y);
-    opacity: 0;
-  }
-}
-.meme-hole {
-  position: absolute;
-  left: 24%;
-  bottom: 2px;
-  width: 53%;
-  height: 24px;
-  background: #2d2014;
-  border: 5px solid #765c38;
-  border-radius: 50%;
-  animation: hole-grow 4.1s steps(8) both;
-}
-@keyframes hole-grow {
-  0% {
-    scale: 0;
-  }
-  30%,
-  100% {
-    scale: 1;
-  }
-}
-.meme-shovel {
-  position: absolute;
-  left: 66%;
-  bottom: 0;
-  width: 65px;
-  height: 180px;
-  transform-origin: 50% 25%;
-  animation: shovel-dig 0.8s steps(5) 5;
-}
-@keyframes shovel-dig {
-  0%,
-  100% {
-    rotate: 15deg;
-  }
-  50% {
-    rotate: -35deg;
-    translate: 0 17px;
-  }
-}
-.nt-stage[data-cinematic="burrow"] .nt-actor {
-  animation: actor-bury 4.1s steps(10) both;
-}
-@keyframes actor-bury {
-  0%,
-  25% {
-    bottom: 6px;
-    rotate: 0;
-  }
-  45% {
-    rotate: -7deg;
-  }
-  65% {
-    rotate: 9deg;
-  }
-  100% {
-    bottom: -240px;
-    rotate: 0;
-  }
-}
-.meme-dirt {
-  position: absolute;
-  left: 50%;
-  bottom: 15px;
-}
-.meme-dirt i {
-  position: absolute;
-  width: 10px;
-  height: 8px;
-  background: #775333;
-  animation: dirt-fly 0.8s steps(6) 5;
-  animation-delay: calc(var(--i) * 0.035s);
-}
-@keyframes dirt-fly {
-  0% {
-    translate: 0 0;
-    opacity: 0;
-  }
-  30% {
-    opacity: 1;
-  }
-  100% {
-    translate: var(--x) -75px;
-    opacity: 0;
-  }
-}
-.meme-bars {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  animation: jail-drop 4.8s steps(10) both;
-}
-@keyframes jail-drop {
-  0% {
-    translate: 0 -100%;
-  }
-  18%,
-  88% {
-    translate: 0 0;
-    opacity: 1;
-  }
-  100% {
-    translate: 0 0;
-    opacity: 0;
-  }
-}
-.nt-stage[data-cinematic="jail"] .nt-actor {
-  animation: actor-dissolve 4.8s steps(12) both;
-}
-@keyframes actor-dissolve {
-  0%,
-  25% {
-    filter: grayscale(0);
-    opacity: 1;
-    clip-path: inset(0);
-  }
-  37% {
-    filter: grayscale(1);
-    opacity: 1;
-    clip-path: inset(0);
-  }
-  72%,
-  100% {
-    filter: grayscale(1);
-    opacity: 0;
-    clip-path: inset(100% 0 0);
-  }
-}
-.meme-dust {
-  position: absolute;
-  inset: 0;
-}
-.meme-dust i {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  background: #fff;
-  box-shadow: 1px 1px #777;
-  animation: pixel-dust 4.8s steps(12) both;
-}
-@keyframes pixel-dust {
-  0%,
-  36% {
-    opacity: 0;
-    translate: 0 0;
-  }
-  44% {
-    opacity: 1;
-  }
-  85%,
-  100% {
-    opacity: 0;
-    translate: var(--dx) var(--dy);
-  }
-}
-.fake-system {
-  position: absolute;
-  inset: 24px 12px;
-  background: #c0c0c0;
-  border: 3px outset white;
-  padding: 18px 10px;
-  font: 12px monospace;
-  animation: fake-window-in 4.2s steps(4) both;
-}
-.fake-system strong {
+/* Original sprite artwork, with optional audio-envelope motion, not invented mouth frames. */
+.mascot-canvas {
   display: block;
-  background: #000080;
-  color: white;
-  padding: 6px;
-}
-.fake-system b {
-  display: block;
-  margin-top: 20px;
-  color: #742408;
-  font-size: 11px;
-}
-.fake-bsod {
-  background: #0000aa;
-  color: white;
-  border: 0;
-}
-.fake-bsod b {
-  color: #ffec8e;
-}
-.fake-progress {
-  height: 23px;
-  padding: 3px;
-  border: 2px inset white;
-}
-.fake-progress i {
-  display: block;
-  background: repeating-linear-gradient(
-    90deg,
-    #000080 0 9px,
-    transparent 9px 12px
-  );
-  height: 100%;
-  animation: fake-progress 3.5s steps(10) both;
-}
-@keyframes fake-progress {
-  from {
-    width: 0;
-  }
-  to {
-    width: 100%;
-  }
-}
-@keyframes fake-window-in {
-  0% {
-    opacity: 0;
-    scale: 0.4;
-  }
-  15%,
-  85% {
-    opacity: 1;
-    scale: 1;
-  }
-  100% {
-    opacity: 0;
-    scale: 1;
-  }
+  transform-origin: center bottom;
+  transition: transform 45ms linear;
 }
 @media (prefers-reduced-motion: reduce) {
-  .cinematic {
-    opacity: 0.85;
-  }
-  .meme-fire,
-  .meme-cracks,
-  .meme-pow,
-  .meme-dust,
-  .meme-stars,
-  .meme-dirt {
-    display: none;
-  }
-  .nt-stage[data-cinematic] .nt-actor {
-    animation: none !important;
+  .mascot-canvas {
+    transform: none !important;
+    transition: none;
   }
 }
-/* Original sprite artwork, with optional audio-envelope motion, not invented mouth frames. */
-.mascot-canvas { display: block; transform-origin: center bottom; transition: transform 45ms linear; }
-@media (prefers-reduced-motion: reduce) { .mascot-canvas { transform: none !important; transition: none; } }
+/* Original frame animation replaces the old rotated/sliding SVG scenes. */
+.nt-actor,
+.phase-offended .nt-actor,
+.phase-peeking .nt-actor,
+.phase-rude[data-away="true"] .nt-actor {
+  left: 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.2s;
+}
+.phase-away .nt-actor {
+  left: 50%;
+  opacity: 0;
+}
+.mascot-canvas {
+  transition: none;
+}
+.nt-balloon > span {
+  max-height: 130px;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  user-select: text;
+}
+.settings-save-status {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+  padding: 6px 0;
+  font-size: 11px;
+}
+.connection-diagnostic pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.4 monospace;
+}
+@media (max-height: 430px) {
+  .nt-balloon > span {
+    max-height: 95px;
+  }
+}
+
+.nt-composer form button {
+  position: relative;
+}
+.diagnostic-dot {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a65f00;
+}
+.nt-away-note {
+  font-size: 10px;
+  margin-top: 5px;
+  color: #555;
+}

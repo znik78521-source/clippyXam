@@ -20,7 +20,7 @@ function sanitizeCompanionSnapshot(input) {
   )
     throw new TypeError("Invalid companion snapshot");
   const text = (value) =>
-    typeof value === "string" ? value.slice(0, 2500) : "";
+    typeof value === "string" ? value.slice(0, 12000) : "";
   const bubble = text(input.bubble);
   const start = input.highlight?.start,
     end = input.highlight?.end;
@@ -39,20 +39,12 @@ function sanitizeCompanionSnapshot(input) {
     speechLevel: Number.isFinite(input.speechLevel)
       ? Math.round(Math.max(0, Math.min(1, input.speechLevel)) * 15) / 15
       : null,
-    cinematic:
-      [
-        "bat",
-        "burrow",
-        "jail",
-        "flame",
-        "rage",
-        "format",
-        "bsod",
-        "update",
-      ].includes(input.cinematic?.kind) &&
-      Number.isSafeInteger(input.cinematic?.id) &&
-      input.cinematic.id >= 0
-        ? { kind: input.cinematic.kind, id: input.cinematic.id }
+    autonomous: input.autonomous === true,
+    animation:
+      typeof input.animation?.name === "string" &&
+      /^[A-Za-z0-9_]{1,48}$/.test(input.animation.name) &&
+      Number.isSafeInteger(input.animation.serial)
+        ? { name: input.animation.name, serial: input.animation.serial }
         : null,
     sendResult: {
       sequence:
@@ -73,6 +65,7 @@ function sanitizeCompanionSnapshot(input) {
     highlight,
     notice: text(input.notice).slice(0, 600),
     error: text(input.error),
+    hasDiagnostic: input.hasDiagnostic === true,
     pending: input.pending === true,
     sound: input.sound === true,
     speechBusy: input.speechBusy === true,

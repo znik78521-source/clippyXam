@@ -1,3 +1,4 @@
+import { speechChunks } from "./speech-chunks";
 import { waveEnvelope, envelopeAt } from "./wave-envelope";
 import type { CharacterId } from "./characters";
 import { wordRange } from "./speech-progress";
@@ -18,9 +19,11 @@ export type VoiceDriver = (
   level?: (value: number | null) => void,
 ) => Promise<void>;
 export class SpeechQueue {
-  private queue: { text: string; options: VoiceOptions }[] = [];
+  private queue: { text: string; options: VoiceOptions; ready?: () => void }[] =
+    [];
   private controller: AbortController | null = null;
   private generation = 0;
+  private reveal: (() => void) | null = null;
   constructor(
     private driver: VoiceDriver,
     private activity: (busy: boolean, speaking: boolean) => void,
@@ -28,19 +31,22 @@ export class SpeechQueue {
     private progress: (value: SpeechProgress | null) => void = () => {},
     private level: (value: number | null) => void = () => {},
   ) {}
-  enqueue(text: string, options: VoiceOptions) {
+  enqueue(text: string, options: VoiceOptions, ready?: () => void) {
     if (!text.trim()) return;
     if (this.queue.length >= 3) {
       this.error("В очереди уже три реплики. Подожди или останови озвучку.");
       return;
     }
     this.queue.push({
-      text: text.trim().slice(0, 2500),
+      text: text.trim().slice(0, 12000),
       options: { ...options },
+      ready,
     });
     if (!this.controller) void this.next();
   }
-  stop() {
+  stop(reveal = true) {
+    if (reveal) this.reveal?.();
+    this.reveal = null;
     this.generation++;
     this.queue = [];
     this.controller?.abort();
@@ -61,8 +67,24 @@ export class SpeechQueue {
     this.activity(true, false);
     this.progress(null);
     this.level(null);
+    let presented = false;
+    const present = () => {
+      if (
+        !presented &&
+        generation === this.generation &&
+        !controller.signal.aborted
+      ) {
+        presented = true;
+        job.ready?.();
+      }
+    };
+    this.reveal = present;
+    const presentationDeadline = setTimeout(present, 4000);
     // Bound both network wait and OS voices that never report completion.
-    const watchdog = setTimeout(() => controller.abort("timeout"), 120000);
+    const watchdog = setTimeout(
+      () => controller.abort("timeout"),
+      Math.min(900000, Math.max(120000, job.text.length * 90)),
+    );
     let onAbort = () => {};
     try {
       const aborted = new Promise<void>((resolve) => {
@@ -76,8 +98,10 @@ export class SpeechQueue {
           job.options,
           controller.signal,
           () => {
-            if (generation === this.generation && !controller.signal.aborted)
+            if (generation === this.generation && !controller.signal.aborted) {
+              present();
               this.activity(true, true);
+            }
           },
           (index, length) => {
             if (generation !== this.generation || controller.signal.aborted)
@@ -107,9 +131,12 @@ export class SpeechQueue {
         this.error("Озвучка превысила время ожидания.");
     } finally {
       clearTimeout(watchdog);
+      clearTimeout(presentationDeadline);
+      present();
       controller.signal.removeEventListener("abort", onAbort);
       if (generation === this.generation) {
         this.controller = null;
+        this.reveal = null;
         this.progress(null);
         this.level(null);
         void this.next();
@@ -273,14 +300,33 @@ export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
       };
       signal.addEventListener("abort", abort, { once: true });
       try {
-        const bytes = await bridge.synthesizeLocalVoice(text, options.rate);
-        if (signal.aborted || !bytes) return;
-        await playAudio(
-          new Blob([new Uint8Array(bytes)], { type: "audio/wav" }),
-          signal,
-          started,
-          level,
-        );
+        const parts = speechChunks(text);
+        const synth = async (part: string) => {
+          const key = JSON.stringify(["local", options.rate, part]);
+          const cached = cache.get(key);
+          if (cached) return cached;
+          const bytes = await bridge.synthesizeLocalVoice!(part, options.rate);
+          if (signal.aborted || !bytes) return null;
+          const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
+          cache.put(key, blob);
+          return blob;
+        };
+        let next = synth(parts[0]);
+        for (let i = 0; i < parts.length; i++) {
+          const blob = await next;
+          if (signal.aborted || !blob) return;
+          next =
+            i + 1 < parts.length ? synth(parts[i + 1]) : Promise.resolve(null);
+          // Attach immediately: prefetch may fail while the previous audio is still playing.
+          const captured = next.then(
+            (value) => ({ value, error: null as unknown }),
+            (error) => ({ value: null, error }),
+          );
+          await playAudio(blob, signal, started, level);
+          const prefetched = await captured;
+          if (prefetched.error) throw prefetched.error;
+          next = Promise.resolve(prefetched.value);
+        }
       } finally {
         signal.removeEventListener("abort", abort);
       }

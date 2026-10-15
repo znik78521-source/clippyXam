@@ -1,3 +1,9 @@
+import {
+  moodActions,
+  motionActions,
+  nextIdle,
+} from "../lib/original-animations";
+import type { WindowMotion } from "../lib/useWindowMotion";
 import { useEffect, useRef, useState } from "react";
 import type { CharacterId, Mood } from "../lib/characters";
 
@@ -23,52 +29,34 @@ function load(id: CharacterId) {
     );
   return cache.get(id)!;
 }
-const animationNames: Record<CharacterId, Partial<Record<Mood, string>>> = {
-  clippy: {
-    idle: "IdleEyeBrowRaise",
-    thinking: "Thinking",
-    speaking: "Explain",
-    offended: "LookRight",
-    peeking: "LookLeft",
-    rude: "GestureUp",
-  },
-  rover: {
-    idle: "Idle",
-    thinking: "Thinking",
-    speaking: "Acknowledge",
-    offended: "Embarrassed",
-    peeking: "LookUpLeft",
-    rude: "GetAttentionMinor",
-  },
-  merlin: {
-    idle: "Blink",
-    thinking: "Thinking",
-    speaking: "Explain",
-    offended: "Sad",
-    peeking: "LookLeft",
-    rude: "Decline",
-  },
-};
 export default function Mascot({
   id,
   mood = "idle",
   size = 250,
   thumbnail = false,
-  speechLevel = null,
+  autonomous = false,
+  animation = null,
+  typingPulse = 0,
+  motion = { direction: "still", serial: 0 },
 }: {
   id: CharacterId;
   mood?: Mood;
   size?: number;
   thumbnail?: boolean;
-  speechLevel?: number | null;
+  autonomous?: boolean;
+  animation?: { name: string; serial: number } | null;
+  typingPulse?: number;
+  motion?: WindowMotion;
 }) {
   const [sprite, setSprite] = useState<LoadedSprite | null>(null);
   const [frame, setFrame] = useState<SpriteFrame>({
     duration: 100,
     images: [[0, 0]],
   });
-  const moodRef = useRef(mood);
-  moodRef.current = mood;
+  const controls = useRef({ mood, autonomous, animation, typingPulse, motion });
+  controls.current = { mood, autonomous, animation, typingPulse, motion };
+  const [shake, setShake] = useState(0);
+  const [action, setAction] = useState("RestPose");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let disposed = false;
@@ -92,20 +80,111 @@ export default function Mascot({
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;
+    let idleAt = performance.now() + 3500,
+      idleUntil = 0,
+      idleName = "",
+      lastIdle = "",
+      previewSerial = -1,
+      previewUntil = 0,
+      previewName = "",
+      lastPulse = 0,
+      shakeUntil = 0,
+      motionAt = 0,
+      lastDirection = "still",
+      lastMood: Mood = "idle",
+      releaseAt = 0,
+      heldFrame = 0;
+    let movementFrames: SpriteFrame[] = [];
     function tick() {
       if (disposed) return;
+      const now = performance.now(),
+        c = controls.current;
       if (thumbnail || media.matches) {
         player.reset();
         setFrame(sprite!.data.animations.RestPose.frames[0]);
+        setAction("RestPose");
+        setShake(0);
       } else {
-        player.request(
-          animationNames[id][moodRef.current] || "RestPose",
-          performance.now(),
-          moodRef.current === "idle" ? 6000 : 500,
+        if (c.typingPulse !== lastPulse) {
+          lastPulse = c.typingPulse;
+          shakeUntil = now + 170;
+          idleUntil = 0;
+          idleAt = now + 7000;
+        }
+        setShake(
+          now < shakeUntil
+            ? Math.floor((shakeUntil - now) / 35) % 2
+              ? 1.5
+              : -1.5
+            : 0,
         );
-        setFrame(player.tick(performance.now()));
+        if (c.animation && c.animation.serial !== previewSerial) {
+          previewSerial = c.animation.serial;
+          previewName = c.animation.name;
+          previewUntil = now + 7000;
+        }
+        if (c.motion.direction !== lastDirection) {
+          if (c.motion.direction === "still") releaseAt = now;
+          else {
+            motionAt = now;
+            movementFrames =
+              sprite!.data.animations[
+                motionActions[id][c.motion.direction][0]
+              ]?.frames.filter((f) => f.images?.length) || [];
+          }
+          lastDirection = c.motion.direction;
+        }
+        if (c.mood !== lastMood) {
+          idleUntil = 0;
+          lastMood = c.mood;
+          idleAt = now + 5000;
+        }
+        let name = "RestPose";
+        if (c.motion.direction !== "still") {
+          const sequence = motionActions[id][c.motion.direction];
+          name = sequence[0];
+          idleUntil = 0;
+          idleAt = now + 6000;
+        } else if (now < shakeUntil)
+          name =
+            id === "rover"
+              ? "ClickedOn"
+              : id === "merlin"
+                ? "Hearing_1"
+                : "Hearing_1";
+        else if (now < previewUntil) name = previewName;
+        else if (c.mood !== "idle")
+          name = moodActions[id][c.mood] || "RestPose";
+        else if (c.autonomous) {
+          if (now >= idleAt) {
+            idleName = nextIdle(id, lastIdle);
+            lastIdle = idleName;
+            idleUntil = now + 6500;
+            idleAt = idleUntil + 6500 + Math.random() * 3500;
+          }
+          if (now < idleUntil) name = idleName;
+        }
+        player.request(name, now, 60000);
+        setAction(name);
+        if (c.motion.direction !== "still" && movementFrames.length) {
+          heldFrame = Math.min(
+            Math.max(1, Math.floor(movementFrames.length * 0.6)),
+            Math.floor((now - motionAt) / 55),
+          );
+          setFrame(
+            movementFrames[Math.min(heldFrame, movementFrames.length - 1)],
+          );
+        } else if (movementFrames.length && now - releaseAt < 350) {
+          const index = Math.floor(heldFrame * (1 - (now - releaseAt) / 350));
+          setAction("Settle");
+          setFrame(
+            movementFrames[
+              Math.max(0, Math.min(index, movementFrames.length - 1))
+            ],
+          );
+        } else setFrame(player.tick(now));
       }
-      if (!thumbnail) timer = setTimeout(tick, 16);
+      if (!thumbnail) timer = setTimeout(tick, 32);
     }
     tick();
     return () => {
@@ -155,6 +234,8 @@ export default function Mascot({
   return (
     <div
       className={`mascot-sprite ${thumbnail ? "thumbnail" : ""}`}
+      data-original-animation={action}
+      data-typing-pulse={typingPulse}
       role="img"
       aria-label={id}
       style={{ width: width * scale, height: height * scale }}
@@ -165,13 +246,11 @@ export default function Mascot({
         height={height}
         data-companion-alpha
         className="mascot-canvas"
-        data-speech-level={speechLevel ?? 0}
+        data-typing-shake={shake}
         style={{
           width: width * scale,
           height: height * scale,
-          transform: speechLevel
-            ? `translateY(${-3 * speechLevel}px) scaleY(${1 + 0.025 * speechLevel})`
-            : undefined,
+          transform: shake ? `translateX(${shake}px)` : undefined,
         }}
       />
     </div>

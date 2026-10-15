@@ -24,7 +24,6 @@ export function orderFreeModels(models: FreeModel[]) {
 }
 // Bootstrap only. Refreshed from the public OpenRouter catalog, never marketed as a speed benchmark.
 export const BOOTSTRAP_MODELS: FreeModel[] = [
-  { id: "liquid/lfm-2.5-2.6b:free", name: "Liquid LFM2.5 2.6B", group: "fast" },
   { id: "qwen/qwen3-4b:free", name: "Qwen3 4B", group: "fast" },
   { id: "google/gemma-4-31b-it:free", name: "Gemma 4 31B", group: "reserve" },
   {
@@ -46,6 +45,7 @@ export function parseFreeModels(payload: unknown): FreeModel[] {
       !row ||
       typeof row.id !== "string" ||
       row.id === DEFAULT_MODEL ||
+      row.id.startsWith("liquid/") ||
       !isFreeModel(row.id)
     )
       continue;
@@ -83,14 +83,16 @@ export function fallbackCandidates(
     throw new Error(
       "Разрешены только бесплатные модели с :free или openrouter/free.",
     );
-  if (!enabled) return [preferred];
+  const first = preferred.startsWith("liquid/") ? DEFAULT_MODEL : preferred;
+  if (!enabled) return [first];
   const available = orderFreeModels(models)
     .map((m) => m.id)
-    .filter((id) => isFreeModel(id) && id !== DEFAULT_MODEL);
-  const ranked = [
-    ...(preferred === DEFAULT_MODEL ? [] : [preferred]),
-    ...available,
-  ];
-  // Always reserve the last slot for the free router. At most 4 different models per send.
-  return [...new Set(ranked)].slice(0, 3).concat(DEFAULT_MODEL);
+    .filter((id) => isFreeModel(id) && !id.startsWith("liquid/"));
+  return [
+    ...new Set([
+      first,
+      ...(first === DEFAULT_MODEL ? [] : [DEFAULT_MODEL]),
+      ...available,
+    ]),
+  ].slice(0, 4);
 }

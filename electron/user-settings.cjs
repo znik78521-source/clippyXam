@@ -19,7 +19,7 @@ function sanitizeSettings(input) {
       /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(input.model))
   )
     out.model = input.model;
-  if (Number.isFinite(input.rate) && input.rate >= 0.7 && input.rate <= 1.4)
+  if (Number.isFinite(input.rate) && input.rate >= 0.7 && input.rate <= 1.8)
     out.rate = input.rate;
   const safeString = (v) =>
     typeof v === "string" && v.length <= 200 && !/[\x00-\x1f]/.test(v);
@@ -58,12 +58,15 @@ function createSettingsStore(directory) {
       await tail;
       try {
         if ((await fs.stat(file)).size > 32768) throw new Error();
-        return {
-          settings: sanitizeSettings(
-            JSON.parse(await fs.readFile(file, "utf8")),
-          ),
-          warning: "",
-        };
+        const raw = JSON.parse(await fs.readFile(file, "utf8"));
+        const settings = sanitizeSettings(raw);
+        if (raw.schemaVersion !== 2) {
+          settings.model = "openrouter/free";
+          if (settings.rate === undefined || settings.rate === 1)
+            settings.rate = 1.25;
+          settings.speechMotion = false;
+        }
+        return { settings, warning: "" };
       } catch (e) {
         return {
           settings: {},
@@ -75,7 +78,10 @@ function createSettingsStore(directory) {
       }
     },
     save(input) {
-      const data = JSON.stringify(sanitizeSettings(input));
+      const data = JSON.stringify({
+        ...sanitizeSettings(input),
+        schemaVersion: 2,
+      });
       const operation = tail.then(async () => {
         await fs.mkdir(directory, { recursive: true });
         const temp = file + ".tmp";

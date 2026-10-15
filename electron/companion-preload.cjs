@@ -3,6 +3,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld(
   "clippyCompanion",
   Object.freeze({
+    onWindowMotion: (callback) => {
+      if (typeof callback !== "function")
+        throw new TypeError("Callback required");
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on("window:motion", listener);
+      return () => ipcRenderer.removeListener("window:motion", listener);
+    },
     startDictation: () => ipcRenderer.invoke("dictation:start"),
     stopDictation: () => ipcRenderer.invoke("dictation:stop"),
     getPointerState: () => ipcRenderer.invoke("companion:pointer-state"),

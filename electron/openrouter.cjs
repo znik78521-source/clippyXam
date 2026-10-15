@@ -39,7 +39,7 @@ function validate(input) {
   if (
     b.provider?.max_price?.prompt !== 0 ||
     b.provider?.max_price?.completion !== 0 ||
-    b.max_tokens !== 400
+    ![400, 2048].includes(b.max_tokens)
   )
     throw new Error("INVALID_REQUEST");
   if (
@@ -60,7 +60,7 @@ function validate(input) {
   });
   const body = JSON.stringify({
     model: b.model,
-    max_tokens: 400,
+    max_tokens: b.max_tokens,
     messages,
     provider: {
       ...(b.provider.sort === "latency" ? { sort: "latency" } : {}),
@@ -104,7 +104,7 @@ async function readJSON(response, limit) {
     return null;
   }
 }
-function createOpenRouter({ fetchImpl, timeoutMs = 12000 }) {
+function createOpenRouter({ fetchImpl, timeoutMs = 17000 }) {
   const active = new Map();
   return {
     async request(input) {

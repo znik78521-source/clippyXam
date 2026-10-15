@@ -226,3 +226,52 @@ test("widget does not replay expired scenes, renders fresh scene and uses conser
     )
     .toBeGreaterThan(0);
 });
+
+test("persisted soft mode blocks a comic request immediately after native startup", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = {
+      mini: false,
+      maximized: false,
+      minimized: false,
+      alwaysOnTop: false,
+      focused: true,
+    };
+    const update = async () => state;
+    window.clippyDesktop = {
+      platform: "win32",
+      getState: update,
+      onState: () => () => {},
+      setCompanion: update,
+      publishCompanion: () => {},
+      onCompanionAction: () => () => {},
+      minimize: update,
+      toggleMaximize: update,
+      close: async () => {},
+      hideToTray: update,
+      setMini: update,
+      setAlwaysOnTop: update,
+      loadSavedKey: async () => ({ key: "test", warning: "" }),
+      saveKey: async () => {},
+      loadSettings: async () => ({
+        settings: { intensity: "soft", sound: false },
+        warning: "",
+      }),
+      saveSettings: async () => {},
+      openRouterRequest: async () => ({ status: 200, data: { data: [] } }),
+      openRouterCancel: async () => {},
+    };
+  });
+  await page.goto("/");
+  const canvas = page.locator('[data-artwork="authored"]');
+  await expect(canvas).toHaveAttribute("data-ready", "true");
+  await send(page, "пошути про снос винды");
+  await expect(page.locator(".nt-balloon")).toContainText(
+    "выключены в мягком режиме",
+  );
+  await expect(canvas).not.toHaveAttribute(
+    "data-authored-action",
+    "WindowsPrank",
+  );
+});

@@ -139,7 +139,10 @@ export default function App() {
           lastReplyText.current = next.quip;
           setBubble(next.quip);
         }
-        if (saved.intensity) setIntensity(saved.intensity);
+        if (saved.intensity) {
+          intensityRef.current = saved.intensity;
+          setIntensity(saved.intensity);
+        }
         if (typeof saved.sound === "boolean") setSound(saved.sound);
         if (warning) setToast(warning);
       })

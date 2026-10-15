@@ -3,6 +3,8 @@ import type { CharacterId, Mood } from "./characters";
 import type { WordRange } from "./speech-progress";
 export interface CompanionSnapshot {
   character: CharacterId;
+  speechLevel?: number | null;
+  clickThrough?: boolean;
   cinematic?: { kind: import("./cinematics").CinematicKind; id: number } | null;
   sendResult?: { sequence: number; success: boolean; text?: string };
   phase: Mood;
@@ -44,6 +46,15 @@ export interface HitMap {
   width: number;
   height: number;
   interacting: boolean;
+  masks?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    columns: number;
+    rows: number;
+    bits: number[];
+  }[];
   rects: { x: number; y: number; width: number; height: number }[];
 }
 export interface CompanionBridge extends DictationBridge {

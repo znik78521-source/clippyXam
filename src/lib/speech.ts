@@ -1,3 +1,4 @@
+import { waveEnvelope, envelopeAt } from "./wave-envelope";
 import type { CharacterId } from "./characters";
 import { wordRange } from "./speech-progress";
 import type { SpeechProgress } from "./speech-progress";
@@ -14,6 +15,7 @@ export type VoiceDriver = (
   signal: AbortSignal,
   started: () => void,
   boundary?: (index: number, length?: number) => void,
+  level?: (value: number | null) => void,
 ) => Promise<void>;
 export class SpeechQueue {
   private queue: { text: string; options: VoiceOptions }[] = [];
@@ -24,6 +26,7 @@ export class SpeechQueue {
     private activity: (busy: boolean, speaking: boolean) => void,
     private error: (message: string) => void,
     private progress: (value: SpeechProgress | null) => void = () => {},
+    private level: (value: number | null) => void = () => {},
   ) {}
   enqueue(text: string, options: VoiceOptions) {
     if (!text.trim()) return;
@@ -44,6 +47,7 @@ export class SpeechQueue {
     this.controller = null;
     this.activity(false, false);
     this.progress(null);
+    this.level(null);
   }
   private async next() {
     const job = this.queue.shift();
@@ -56,6 +60,7 @@ export class SpeechQueue {
     this.controller = controller;
     this.activity(true, false);
     this.progress(null);
+    this.level(null);
     // Bound both network wait and OS voices that never report completion.
     const watchdog = setTimeout(() => controller.abort("timeout"), 120000);
     let onAbort = () => {};
@@ -80,6 +85,10 @@ export class SpeechQueue {
             const range = wordRange(job.text, index, length);
             if (range) this.progress({ text: job.text, ...range });
           },
+          (value) => {
+            if (generation === this.generation && !controller.signal.aborted)
+              this.level(value);
+          },
         ),
       ]);
       if (controller.signal.reason === "timeout")
@@ -102,6 +111,7 @@ export class SpeechQueue {
       if (generation === this.generation) {
         this.controller = null;
         this.progress(null);
+        this.level(null);
         void this.next();
       }
     }
@@ -189,7 +199,7 @@ export async function fetchVoiceAudio(
 }
 export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
   let cloudRequests = 0;
-  return async (text, options, signal, started, boundary) => {
+  return async (text, options, signal, started, boundary, level) => {
     if (signal.aborted) return;
     if (options.provider === "system") {
       if (!("speechSynthesis" in window))
@@ -269,6 +279,7 @@ export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
           new Blob([new Uint8Array(bytes)], { type: "audio/wav" }),
           signal,
           started,
+          level,
         );
       } finally {
         signal.removeEventListener("abort", abort);
@@ -303,11 +314,26 @@ export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
         signal.removeEventListener("abort", abort);
       }
     }
-    await playAudio(blob, signal, started);
+    await playAudio(blob, signal, started, level);
   };
 }
-async function playAudio(blob: Blob, signal: AbortSignal, started: () => void) {
+async function playAudio(
+  blob: Blob,
+  signal: AbortSignal,
+  started: () => void,
+  level?: (value: number | null) => void,
+) {
   if (signal.aborted) return;
+  let envelope: number[] | null = null;
+  if (blob.type === "audio/wav" && blob.size <= 16 * 1024 * 1024) {
+    try {
+      envelope = waveEnvelope(await blob.arrayBuffer());
+    } catch {
+      /* Audio remains playable without motion. */
+    }
+  }
+  if (signal.aborted) return;
+  let sampler: ReturnType<typeof setInterval> | undefined;
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   try {
@@ -325,7 +351,24 @@ async function playAudio(blob: Blob, signal: AbortSignal, started: () => void) {
         finish();
       };
       signal.addEventListener("abort", abort, { once: true });
-      audio.onplaying = started;
+      let stalled = false;
+      audio.onwaiting = audio.onstalled = () => {
+        stalled = true;
+        level?.(0);
+      };
+      audio.onplaying = () => {
+        stalled = false;
+        started();
+        clearInterval(sampler);
+        const sample = () =>
+          level?.(
+            stalled || audio.paused || audio.ended
+              ? 0
+              : envelopeAt(envelope, audio.currentTime),
+          );
+        sample();
+        sampler = setInterval(sample, 50);
+      };
       audio.onended = () => finish();
       audio.onerror = () =>
         finish(new Error("Не удалось воспроизвести аудио."));
@@ -340,6 +383,9 @@ async function playAudio(blob: Blob, signal: AbortSignal, started: () => void) {
         );
     });
   } finally {
+    clearInterval(sampler);
+    level?.(null);
+    audio.onwaiting = audio.onstalled = null;
     audio.pause();
     audio.removeAttribute("src");
     audio.load();

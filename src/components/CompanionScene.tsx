@@ -172,6 +172,7 @@ export function CompanionScene({
           >
             <Mascot
               id={snapshot.character}
+              speechLevel={snapshot.speechLevel}
               mood={snapshot.animationMood}
               size={snapshot.character === "clippy" ? 205 : 176}
             />

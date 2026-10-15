@@ -19,6 +19,9 @@ try {
     page.getByRole("dialog", { name: "Подключение к OpenRouter" }),
   ).toBeVisible({ timeout: 30000 });
   await fs.access("release/clippyXam-data");
+  const startup = await page.evaluate(() => window.clippyDesktop.getStartup());
+  expect(startup.available).toBe(true);
+  expect(startup.enabled).toBe(false); // never register actual CI login items
   await page.screenshot({ path: "release/portable-onboarding.png" });
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
   console.log(

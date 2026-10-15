@@ -232,16 +232,57 @@ test("closed window cleanup never accesses a destroyed BrowserWindow native gett
   const window = new EventEmitter();
   const contents = new EventEmitter();
   let destroyed = false;
-  Object.defineProperty(window, "webContents", { get() {
-    if (destroyed) throw new Error("Object has been destroyed");
-    return contents;
-  }});
+  Object.defineProperty(window, "webContents", {
+    get() {
+      if (destroyed) throw new Error("Object has been destroyed");
+      return contents;
+    },
+  });
   window.isDestroyed = () => destroyed;
   window.setIgnoreMouseEvents = () => {};
-  const controller = createPointerController({window, getCursor:()=>({x:0,y:0})});
+  const controller = createPointerController({
+    window,
+    getCursor: () => ({ x: 0, y: 0 }),
+  });
   assert.equal(contents.listenerCount("did-start-loading"), 1);
   destroyed = true;
   assert.doesNotThrow(() => window.emit("closed"));
   assert.equal(contents.listenerCount("did-start-loading"), 0);
   assert.doesNotThrow(() => controller.dispose());
+});
+test("alpha masks pass transparent pixels, retain opaque pixels and safe recovery strips", () => {
+  const hit = sanitizeHitMap({
+    width: 360,
+    height: 460,
+    interacting: false,
+    rects: [],
+    masks: [
+      {
+        x: 100,
+        y: 150,
+        width: 100,
+        height: 100,
+        columns: 2,
+        rows: 2,
+        bits: [9],
+      },
+    ],
+  });
+  const bounds = { x: -360, y: 0, width: 360, height: 460 };
+  assert.equal(hitsControls({ x: -235, y: 175 }, bounds, hit), true);
+  assert.equal(hitsControls({ x: -185, y: 175 }, bounds, hit), false);
+  assert.equal(hitsControls({ x: -235, y: 225 }, bounds, hit), false);
+  assert.equal(hitsControls({ x: -185, y: 225 }, bounds, hit), true);
+  assert.equal(hitsControls({ x: -200, y: 430 }, bounds, hit), true);
+  for (const patch of [
+    { columns: 513 },
+    { rows: 0 },
+    { bits: [256] },
+    { bits: [] },
+    { x: -1 },
+    { height: 500 },
+  ])
+    assert.throws(() =>
+      sanitizeHitMap({ ...hit, masks: [{ ...hit.masks[0], ...patch }] }),
+    );
 });

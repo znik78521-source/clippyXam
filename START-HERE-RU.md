@@ -2,7 +2,7 @@
 
 ## Нужна программа, а не исходники
 
-Открой [релиз 0.6.1](https://github.com/znik78521-source/clippyXam/releases/tag/v0.6.1-portable) и скачай **clippyXam-0.6.1-win-x64-portable.exe** из Assets. Это portable для Windows 10/11 x64: Node.js и установка не нужны. Подробная инструкция — [PORTABLE-RU.md](PORTABLE-RU.md).
+Открой [релиз 0.7.0](https://github.com/znik78521-source/clippyXam/releases/tag/v0.7.0-portable) и скачай **clippyXam-0.7.0-win-x64-portable.exe** из Assets. Это portable для Windows 10/11 x64: Node.js и установка не нужны. Подробная инструкция — [PORTABLE-RU.md](PORTABLE-RU.md).
 
 Автоматические Source code ZIP/TAR на странице релиза — **не приложение**. Старые вручную подготовленные исходные ZIP удалены из рабочей ветки, чтобы не путать их с exe.
 

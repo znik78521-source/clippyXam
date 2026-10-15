@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
 import Dialog from "./Dialog";
 import {
@@ -16,6 +16,8 @@ export interface SettingsData {
   intensity: Intensity;
   sound: boolean;
   widget: boolean;
+  clickThrough: boolean;
+  speechMotion: boolean;
   key: string;
   model: string;
   autoFallback: boolean;
@@ -41,7 +43,7 @@ export default function Settings({
   voices: SpeechSynthesisVoice[];
   localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
   onPreview?: (kind: CinematicKind) => void;
-  onSave: (data: SettingsData) => void;
+  onSave: (data: SettingsData) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [preview, setPreview] = useState<CinematicKind>("bat");
@@ -51,6 +53,27 @@ export default function Settings({
   );
   const [showKey, setShowKey] = useState(false);
   const [validation, setValidation] = useState("");
+  const [startup, setStartup] = useState({ available: false, enabled: false });
+  const [startWithWindows, setStartWithWindows] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void window.clippyDesktop
+      ?.getStartup?.()
+      .then((value) => {
+        if (active) {
+          setStartup(value);
+          setStartWithWindows(value.enabled);
+        }
+      })
+      .catch(() => {
+        if (active)
+          setValidation("Не удалось прочитать настройку автозапуска.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   return (
     <Dialog title="Свойства: clippyXam" onClose={onClose} wide>
       <div className="dialog-heading">
@@ -75,7 +98,7 @@ export default function Settings({
         </div>
       </div>
       <form
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           if (!isFreeModel(draft.model.trim())) {
             setTab("connection");
@@ -89,12 +112,27 @@ export default function Settings({
             setValidation("Для OpenAI TTS нужен отдельный API-ключ.");
             return;
           }
-          onSave({
-            ...draft,
-            key: draft.key.trim(),
-            ttsKey: draft.ttsKey.trim(),
-            model: draft.model.trim(),
-          });
+          setSaving(true);
+          try {
+            if (startWithWindows !== startup.enabled) {
+              const result =
+                await window.clippyDesktop?.setStartup?.(startWithWindows);
+              if (!result) throw new Error("Автозапуск недоступен.");
+              setStartup(result);
+            }
+            await onSave({
+              ...draft,
+              key: draft.key.trim(),
+              ttsKey: draft.ttsKey.trim(),
+              model: draft.model.trim(),
+            });
+          } catch {
+            setValidation(
+              "Не удалось применить настройки. Проверь права записи. Изменённый автозапуск мог сохраниться отдельно.",
+            );
+          } finally {
+            setSaving(false);
+          }
         }}
       >
         <div
@@ -183,6 +221,37 @@ export default function Settings({
           <p className="field-help">
             Без фона окна, со стилизованными кнопками закрытия и сворачивания. В
             браузере — только предпросмотр внутри страницы.
+          </p>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.clickThrough}
+              disabled={!window.clippyDesktop}
+              onChange={(event) =>
+                setDraft({ ...draft, clickThrough: event.target.checked })
+              }
+            />
+            Пропускать клики через прозрачные участки виджета
+          </label>
+          <p className="field-help">
+            Только Windows-виджет. Рамка, ввод и кнопки остаются доступны; при
+            сбое пропуск отключается. Вернуть окно можно через трей. Во время
+            сценок и выглядывания область персонажа защищена целиком.
+          </p>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={startWithWindows}
+              disabled={!startup.available || saving}
+              onChange={(event) => setStartWithWindows(event.target.checked)}
+            />
+            Запускать при входе в Windows
+          </label>
+          <p className="field-help">
+            По умолчанию выключено. Только portable EXE, без прав
+            администратора. После перемещения файла выключи и снова включи
+            автозапуск из новой папки. Удаляя приложение, сначала выключи его
+            здесь.
           </p>
           <label className="field-label" htmlFor="api-key">
             API-ключ OpenRouter
@@ -465,6 +534,21 @@ export default function Settings({
               ))}
             </select>
           </div>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.speechMotion}
+              onChange={(event) =>
+                setDraft({ ...draft, speechMotion: event.target.checked })
+              }
+            />
+            Двигаться в такт озвучке
+          </label>
+          <p className="field-help">
+            Для Piper — по громкости воспроизводимого WAV, не по буквам и не во
+            время загрузки. Это ритм речи, не точные фонемы рта. Reduced motion
+            отключает движение.
+          </p>
           <label className="rate-label" htmlFor="rate">
             Скорость <span>{draft.rate.toFixed(1)}×</span>
           </label>
@@ -643,8 +727,10 @@ export default function Settings({
           <span>
             Ключ OpenRouter в Windows сохраняется зашифрованным и отправляется
             только OpenRouter. Ключ OpenAI TTS — только в памяти и отправляется
-            OpenAI (если выбран). История и кэш аудио не сохраняются после
-            перезагрузки.
+            OpenAI (если выбран). Настройки персонажа, модели, голоса и
+            поведения сохраняются отдельно без ключей и переписки. Виджет
+            открывается вручную; платный TTS после перезапуска не включается.
+            История и кэш аудио не сохраняются после перезагрузки.
           </span>
         </div>
         {validation && (
@@ -654,10 +740,15 @@ export default function Settings({
           </p>
         )}
         <div className="dialog-buttons">
-          <button className="nt-button primary" type="submit">
+          <button className="nt-button primary" type="submit" disabled={saving}>
             Применить
           </button>
-          <button className="nt-button" type="button" onClick={onClose}>
+          <button
+            className="nt-button"
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+          >
             Отмена
           </button>
         </div>

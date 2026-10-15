@@ -35,6 +35,10 @@ function sanitizeCompanionSnapshot(input) {
   // Deliberately NOT spread input: no settings, API keys, voice cache or history.
   return {
     character: input.character,
+    clickThrough: input.clickThrough === true,
+    speechLevel: Number.isFinite(input.speechLevel)
+      ? Math.round(Math.max(0, Math.min(1, input.speechLevel)) * 15) / 15
+      : null,
     cinematic:
       [
         "bat",

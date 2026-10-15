@@ -89,13 +89,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = 'v0.6.1-portable'
+          $tag = 'v0.7.0-portable'
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $sha = (Get-ChildItem release/*.exe.sha256).FullName
           $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           $notes = @"
           ## Portable для Windows 10/11 x64 — без установщика
-          Скачайте **clippyXam-0.6.1-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+          Скачайте **clippyXam-0.7.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+
+          Добавлено: автозапуск Windows по явному согласию (использует путь portable, не временный exe); сохранение настроек без ключей/переписки; пропуск кликов по альфа-маске текущего кадра виджета с защитой кнопок/ввода и автоотключением при сбое; движение оригинального маскота по громкости реально воспроизводимого Piper WAV. Это аудио-ритм, не фонемная артикуляция. Во время выглядывания и сложных сценок сохраняется безопасная прямоугольная область. Автозапуск выключен по умолчанию; удаляя/перемещая exe, сначала отключите его в настройках.
+
+          Courtney/Earl и оригинальные грубые кадры не подменялись заглушками — проверенных ресурсов пока нет. Цифровой подписи также нет. Не весь первоначальный план завершён; статус и ограничения записаны в ROADMAP.
 
           Исправлен сетевой транспорт portable: чат и список моделей идут через основной процесс Electron, а не renderer с clippyxam:// origin. Фиксированные HTTPS-адреса OpenRouter, системный proxy/TLS, без отключения CORS/проверки сертификатов. При DNS/TLS/прокси/обрыве показывается безопасный код, а не бесполезный перебор четырёх моделей. Бесплатные модели, переключение при отказе провайдера/таймауте, нулевые цены и сохранение черновика остаются.
 
@@ -116,7 +120,7 @@ jobs:
           $notes | Set-Content -Encoding utf8 release/release-notes.md
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.6.1 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.7.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Report smoke failure diagnostics
         if: failure()

@@ -27,11 +27,46 @@ function sanitizeHitMap(value) {
       throw new TypeError("Invalid hit rectangle");
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   });
+  const masks = value.masks === undefined ? [] : value.masks;
+  if (!Array.isArray(masks) || masks.length > 2)
+    throw new TypeError("Invalid alpha masks");
+  const cleanMasks = masks.map((m) => {
+    if (
+      !m ||
+      !["x", "y", "width", "height"].every((k) => Number.isFinite(m[k])) ||
+      m.x < 0 ||
+      m.y < 0 ||
+      m.width <= 0 ||
+      m.height <= 0 ||
+      m.x + m.width > value.width + 1 ||
+      m.y + m.height > value.height + 1 ||
+      !Number.isInteger(m.columns) ||
+      !Number.isInteger(m.rows) ||
+      m.columns < 1 ||
+      m.rows < 1 ||
+      m.columns > 512 ||
+      m.rows > 512 ||
+      !Array.isArray(m.bits) ||
+      m.bits.length !== Math.ceil((m.columns * m.rows) / 8) ||
+      m.bits.some((b) => !Number.isInteger(b) || b < 0 || b > 255)
+    )
+      throw new TypeError("Invalid alpha mask");
+    return {
+      x: m.x,
+      y: m.y,
+      width: m.width,
+      height: m.height,
+      columns: m.columns,
+      rows: m.rows,
+      bits: [...m.bits],
+    };
+  });
   return {
     width: value.width,
     height: value.height,
     interacting: value.interacting,
     rects,
+    ...(value.masks !== undefined ? { masks: cleanMasks } : {}),
   };
 }
 function hitsControls(point, bounds, map) {
@@ -44,12 +79,22 @@ function hitsControls(point, bounds, map) {
     ((y >= 0 && y <= 64) || (y >= map.height - 110 && y <= map.height))
   )
     return true;
-  return map.rects.some(
-    (r) =>
-      x >= r.x - 6 &&
-      x <= r.x + r.width + 6 &&
-      y >= r.y - 6 &&
-      y <= r.y + r.height + 6,
+  return (
+    (map.masks || []).some((m) => {
+      if (x < m.x || y < m.y || x >= m.x + m.width || y >= m.y + m.height)
+        return false;
+      const column = Math.floor(((x - m.x) * m.columns) / m.width),
+        row = Math.floor(((y - m.y) * m.rows) / m.height),
+        i = row * m.columns + column;
+      return Boolean(m.bits[i >> 3] & (1 << (i & 7)));
+    }) ||
+    map.rects.some(
+      (r) =>
+        x >= r.x - 6 &&
+        x <= r.x + r.width + 6 &&
+        y >= r.y - 6 &&
+        y <= r.y + r.height + 6,
+    )
   );
 }
 function createPointerController({
@@ -117,8 +162,8 @@ function createPointerController({
       apply(
         Boolean(
           map &&
-            !map.interacting &&
-            !hitsControls(getCursor(), window.getContentBounds(), map),
+          !map.interacting &&
+          !hitsControls(getCursor(), window.getContentBounds(), map),
         ),
       );
     } catch {

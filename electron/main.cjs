@@ -67,7 +67,9 @@ let win,
   companion,
   localVoice,
   keyVault,
-  openRouter;
+  openRouter,
+  userSettings,
+  startup;
 let companionSnapshot = null,
   companionBounds = null;
 let quitting = false;
@@ -232,6 +234,10 @@ function installIPC() {
     getURL: () => devURL,
     transport: openRouter,
   });
+  handlers["preferences:load"] = () => userSettings.load();
+  handlers["preferences:save"] = (value) => userSettings.save(value);
+  handlers["startup:get"] = () => startup.state();
+  handlers["startup:set"] = (value) => startup.set(value);
   handlers["key:load"] = () => keyVault.load();
   handlers["key:save"] = (key) => keyVault.save(key);
   handlers["voice:state"] = () => localVoice.state();
@@ -366,6 +372,7 @@ function createCompanionSurface() {
     alwaysOnTop: controller.state().alwaysOnTop,
     webPreferences: {
       preload: path.join(__dirname, "companion-preload.cjs"),
+      backgroundThrottling: false, // visible-widget hit-map heartbeat must not be throttled
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -583,6 +590,10 @@ else {
       openRouter = require("./openrouter.cjs").createOpenRouter({
         fetchImpl: (...args) => net.fetch(...args),
       });
+      userSettings = require("./user-settings.cjs").createSettingsStore(
+        app.getPath("userData"),
+      );
+      startup = require("./startup.cjs").createStartup({ app });
       keyVault = require("./key-vault.cjs").createKeyVault({
         directory: app.getPath("userData"),
         safeStorage,

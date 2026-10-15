@@ -197,3 +197,36 @@ test("cloud driver enforces its session attempt limit even across cache clearing
   );
   assert.equal(requests, 30);
 });
+test("audio levels reset on stop and late frames cannot animate a new utterance", async () => {
+  const frames: ((v: number | null) => void)[] = [],
+    ends: (() => void)[] = [],
+    levels: (number | null)[] = [];
+  const queue = new SpeechQueue(
+    (_t, _o, _s, start, _b, level) =>
+      new Promise((resolve) => {
+        frames.push(level!);
+        ends.push(resolve);
+        start();
+      }),
+    () => {},
+    assert.fail,
+    () => {},
+    (v) => levels.push(v),
+  );
+  queue.enqueue("Первое", options);
+  frames[0](0.8);
+  assert.equal(levels.at(-1), 0.8);
+  queue.stop();
+  assert.equal(levels.at(-1), null);
+  queue.enqueue("Второе", options);
+  const count = levels.length;
+  frames[0](1);
+  assert.equal(levels.length, count);
+  frames[1](0.4);
+  assert.equal(levels.at(-1), 0.4);
+  ends[0]();
+  ends[1]();
+  await flush();
+  assert.equal(levels.at(-1), null);
+  queue.stop();
+});

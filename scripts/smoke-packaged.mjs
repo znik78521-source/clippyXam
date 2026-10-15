@@ -60,6 +60,38 @@ try {
       async () => (await window.clippyDesktop.loadSavedKey()).key,
     ),
   ).toBe("smoke-test-not-a-real-key");
+  await expect
+    .poll(() =>
+      fs
+        .stat(path.join(profile, "clippyXam-data", "preferences.json"))
+        .then(() => true)
+        .catch(() => false),
+    )
+    .toBe(true);
+  // Real on-disk preference round trip; keys/chats must never enter this file.
+  await page.evaluate(async () => {
+    await window.clippyDesktop.saveSettings({
+      character: "clippy",
+      model: "openrouter/free",
+      rate: 1.2,
+      speechMotion: true,
+      clickThrough: false,
+      key: "must-not-persist",
+      messages: ["private-test-message"],
+    });
+  });
+  const preferences = JSON.parse(
+    await fs.readFile(
+      path.join(profile, "clippyXam-data", "preferences.json"),
+      "utf8",
+    ),
+  );
+  expect(preferences.rate).toBe(1.2);
+  expect(JSON.stringify(preferences)).not.toContain("must-not-persist");
+  expect(JSON.stringify(preferences)).not.toContain("private-test-message");
+  expect(
+    (await page.evaluate(() => window.clippyDesktop.getStartup())).available,
+  ).toBe(false); // unpacked smoke is not the stable portable launcher
   const encrypted = await fs.readFile(
     path.join(profile, "clippyXam-data", "openrouter-key.bin"),
   );
@@ -157,6 +189,12 @@ try {
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).fill("Smoke");
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
   await expect(page.locator(".nt-balloon")).toContainText("Проверка portable");
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page
+    .getByLabel("Пропускать клики через прозрачные участки виджета")
+    .check();
+  await page.getByRole("button", { name: "Применить", exact: true }).click();
+
   const nativeChats = await app.evaluate(() => globalThis.__nativeChats);
   expect(nativeChats).toHaveLength(1);
   expect(
@@ -190,6 +228,10 @@ try {
       ),
     )
     .toBe(1);
+  await expect
+    .poll(() => widget.evaluate(() => window.clippyCompanion.getPointerState()))
+    .toMatchObject({ available: true, enabled: true });
+  await expect(widget.locator("canvas[data-companion-alpha]")).toBeVisible();
   await widget.screenshot({ path: "release/packaged-widget.png" });
   await widget.getByRole("button", { name: "Настройки", exact: true }).click();
   await expect(
@@ -216,6 +258,11 @@ try {
   await expect(
     page.getByRole("dialog", { name: "Подключение к OpenRouter" }),
   ).toHaveCount(0);
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await expect(
+    page.getByLabel("Пропускать клики через прозрачные участки виджета"),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Отмена", exact: true }).click();
   expect(errors).toEqual([]);
   console.log(
     "Packaged Windows smoke passed: production scheme/assets, onboarding, mocked chat, widget/settings/restore, portable profile.",

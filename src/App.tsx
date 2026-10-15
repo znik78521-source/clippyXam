@@ -1,3 +1,4 @@
+import { publicSettings } from "./lib/saved-settings";
 import { TransportError } from "./lib/openrouter-transport";
 import { useEffect, useRef, useState } from "react";
 import { CompanionScene } from "./components/CompanionScene";
@@ -70,6 +71,8 @@ export default function App() {
     intensity: "wild",
     sound: localVoiceAvailable,
     widget: false,
+    clickThrough: false,
+    speechMotion: true,
     key: "",
     model: DEFAULT_MODEL,
     autoFallback: true,
@@ -106,6 +109,66 @@ export default function App() {
       active = false;
     };
   }, []);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(
+    !window.clippyDesktop?.loadSettings,
+  );
+  useEffect(() => {
+    let active = true;
+    const bridge = window.clippyDesktop;
+    if (!bridge?.loadSettings) return;
+    void bridge
+      .loadSettings()
+      .then(({ settings: saved, warning }) => {
+        if (!active) return;
+        setSettings((current) => ({
+          ...current,
+          ...saved,
+          ttsProvider:
+            saved.ttsProvider === "local" && !localVoiceAvailable
+              ? "system"
+              : saved.ttsProvider || current.ttsProvider,
+          systemVoices: { ...current.systemVoices, ...saved.systemVoices },
+          companion: { ...current.companion, ...saved.companion },
+        }));
+        const next = characters.find((c) => c.id === saved.character);
+        if (next) {
+          setCharacter(next);
+          setMessages([welcome(next)]);
+          setBubble(next.quip);
+        }
+        if (saved.intensity) setIntensity(saved.intensity);
+        if (typeof saved.sound === "boolean") setSound(saved.sound);
+        if (warning) setToast(warning);
+      })
+      .catch(() => {
+        if (active) setToast("Не удалось загрузить настройки.");
+      })
+      .finally(() => {
+        if (active) setPreferencesLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!preferencesLoaded || !keyLoaded || !window.clippyDesktop?.saveSettings)
+      return;
+    const timer = setTimeout(() => {
+      void window.clippyDesktop!.saveSettings!(
+        publicSettings({
+          ...settings,
+          character: character.id,
+          intensity,
+          sound,
+        }),
+      ).catch(() =>
+        setToast(
+          "Не удалось сохранить настройки. Проверь права записи в папку приложения.",
+        ),
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [preferencesLoaded, keyLoaded, settings, character.id, intensity, sound]);
   function persistKey(key: string) {
     void window.clippyDesktop
       ?.saveKey?.(key)
@@ -335,6 +398,7 @@ export default function App() {
     setModal(null);
   }
   async function send(provided?: string) {
+    if (!preferencesLoaded || !keyLoaded) return;
     if (!settings.key.trim()) {
       setModal(null);
       setMinimized(false);
@@ -598,6 +662,8 @@ export default function App() {
   const spokenRange = speech.progress?.text === bubble ? speech.progress : null;
   const companionSnapshot: CompanionSnapshot = {
     character: character.id,
+    clickThrough: settings.clickThrough,
+    speechLevel: settings.speechMotion && speech.speaking ? speech.level : null,
     sendResult,
     cinematic,
     phase,
@@ -699,6 +765,9 @@ export default function App() {
     quiet,
     awayUntil,
     seconds,
+    settings.clickThrough,
+    settings.speechMotion,
+    speech.level,
     speech.progress,
     speech.busy,
     speech.speaking,
@@ -708,7 +777,8 @@ export default function App() {
     cinematic,
   ]);
 
-  function saveSettings(value: SettingsData) {
+  async function saveSettings(value: SettingsData) {
+    await window.clippyDesktop?.saveSettings?.(publicSettings(value));
     cancelRequest();
     stopSpeech();
     clearTimers();
@@ -752,7 +822,7 @@ export default function App() {
           />
         </div>
       )}
-      {keyLoaded && !minimized && !settings.key.trim() ? (
+      {keyLoaded && preferencesLoaded && !minimized && !settings.key.trim() ? (
         <TokenDialog
           onSave={(key) => {
             setSettings((current) => ({ ...current, key }));

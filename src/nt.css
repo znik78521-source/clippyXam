@@ -1051,3 +1051,6 @@ legend svg {
     animation: none !important;
   }
 }
+/* Original sprite artwork, with optional audio-envelope motion, not invented mouth frames. */
+.mascot-canvas { display: block; transform-origin: center bottom; transition: transform 45ms linear; }
+@media (prefers-reduced-motion: reduce) { .mascot-canvas { transform: none !important; transition: none; } }

@@ -4,7 +4,7 @@ import type { CharacterId, Mood } from "../lib/characters";
 import { SpritePlayer } from "../lib/animation";
 import type { SpriteData, SpriteFrame } from "../lib/animation";
 
-type LoadedSprite = { data: SpriteData; map: string };
+type LoadedSprite = { data: SpriteData; map: string; image: HTMLImageElement };
 const cache = new Map<CharacterId, Promise<LoadedSprite>>();
 function load(id: CharacterId) {
   if (!cache.has(id))
@@ -18,7 +18,7 @@ function load(id: CharacterId) {
         const image = new Image();
         image.src = map;
         await image.decode();
-        return { data, map };
+        return { data, map, image };
       })(),
     );
   return cache.get(id)!;
@@ -54,11 +54,13 @@ export default function Mascot({
   mood = "idle",
   size = 250,
   thumbnail = false,
+  speechLevel = null,
 }: {
   id: CharacterId;
   mood?: Mood;
   size?: number;
   thumbnail?: boolean;
+  speechLevel?: number | null;
 }) {
   const [sprite, setSprite] = useState<LoadedSprite | null>(null);
   const [frame, setFrame] = useState<SpriteFrame>({
@@ -112,6 +114,30 @@ export default function Mascot({
       player.reset();
     };
   }, [sprite, id, thumbnail]);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !sprite) return;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    for (const [x, y] of (frame.images || []).slice(
+      0,
+      sprite.data.overlayCount || 1,
+    ))
+      context.drawImage(
+        sprite.image,
+        x,
+        y,
+        canvas.width,
+        canvas.height,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+    canvas.dataset.frame = String(Number(canvas.dataset.frame || 0) + 1);
+  }, [sprite, frame]);
   if (!sprite)
     return (
       <div
@@ -133,32 +159,21 @@ export default function Mascot({
       aria-label={id}
       style={{ width: width * scale, height: height * scale }}
     >
-      <div
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        data-companion-alpha
+        className="mascot-canvas"
+        data-speech-level={speechLevel ?? 0}
         style={{
-          width,
-          height,
-          transform: `scale(${scale})`,
-          transformOrigin: "top left",
-          position: "relative",
+          width: width * scale,
+          height: height * scale,
+          transform: speechLevel
+            ? `translateY(${-3 * speechLevel}px) scaleY(${1 + 0.025 * speechLevel})`
+            : undefined,
         }}
-      >
-        {(frame.images || [])
-          .slice(0, sprite.data.overlayCount || 1)
-          .map(([x, y], i) => (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                inset: 0,
-                width,
-                height,
-                backgroundImage: `url("${sprite.map}")`,
-                backgroundPosition: `-${x}px -${y}px`,
-                backgroundRepeat: "no-repeat",
-              }}
-            />
-          ))}
-      </div>
+      />
     </div>
   );
 }

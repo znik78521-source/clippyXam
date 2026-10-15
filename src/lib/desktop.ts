@@ -1,3 +1,4 @@
+import type { SavedSettings } from "./saved-settings";
 import type { NativeRequest, NativeResult } from "./openrouter-transport";
 import { useCallback, useEffect, useState } from "react";
 import type { DictationBridge } from "./useDictation";
@@ -20,6 +21,12 @@ export interface LocalVoiceState {
 export interface DesktopBridge extends DictationBridge {
   openRouterRequest?(input: NativeRequest): Promise<NativeResult>;
   openRouterCancel?(id: string): Promise<void>;
+  loadSettings?(): Promise<{ settings: SavedSettings; warning: string }>;
+  saveSettings?(value: SavedSettings): Promise<void>;
+  getStartup?(): Promise<{ available: boolean; enabled: boolean }>;
+  setStartup?(
+    value: boolean,
+  ): Promise<{ available: boolean; enabled: boolean }>;
   loadSavedKey?(): Promise<{ key: string; warning: string }>;
   saveKey?(key: string): Promise<void>;
   localVoiceState?(): Promise<LocalVoiceState>;

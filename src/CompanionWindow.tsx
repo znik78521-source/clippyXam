@@ -1,3 +1,4 @@
+import { useWidgetPointer } from "./lib/useWidgetPointer";
 import { useEffect, useState } from "react";
 
 import { CompanionScene } from "./components/CompanionScene";
@@ -8,6 +9,14 @@ import type { CompanionAction } from "./lib/companion";
 export default function CompanionWindow() {
   const [loaded, setLoaded] = useState(false);
   const [snapshot, setSnapshot] = useState(initialCompanionSnapshot);
+  const pointer = useWidgetPointer(
+    Boolean(loaded && snapshot.clickThrough),
+    Boolean(
+      snapshot.away ||
+      snapshot.cinematic ||
+      ["peeking", "offended", "rude"].includes(snapshot.phase),
+    ),
+  );
   useEffect(() => {
     const bridge = window.clippyCompanion;
     if (!bridge) return;
@@ -46,7 +55,7 @@ export default function CompanionWindow() {
   }, [loaded]);
   return (
     <CompanionScene
-      snapshot={snapshot}
+      snapshot={{ ...snapshot, notice: pointer.error || snapshot.notice }}
       widget
       native
       onAction={(action: CompanionAction) =>

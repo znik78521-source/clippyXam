@@ -1,4 +1,4 @@
-# Проверка clippyXam 0.6.1 Portable
+# Проверка clippyXam 0.7.0 Portable
 
 - Windows / сборка / архитектура:
 - Версия exe / имя скачанного файла:

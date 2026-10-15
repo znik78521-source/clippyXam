@@ -45,3 +45,7 @@ Piper 2023.11.14-2 вызывается отдельным процессом и
 ## New Clippy artwork (0.9)
 
 `public/authored/clippy` contains new AI-generated reference-based drawings, not copied animation frames from ClippyJS. The character design remains associated with its original rights holder; the project does not claim official Microsoft provenance or exclusive rights to that design. Runtime uses these drawings with procedural local deformation and an independently implemented inertia model. `manifest.json` records file hashes. Original Agent artwork is retained separately for Rover/Merlin and explicit legacy mode.
+
+### Comic scene drawings (0.10)
+
+`artwork/scenes` contains four new reference-generated key drawings (toy button anticipation/punchline, toy bat wind-up/follow-through). `prepare.py` keys the background and retains a shared canvas; output hashes are recorded in `public/authored/clippy/manifest.json`. Scene transitions, local deformation and canvas-only effects are procedural, not independently painted in-betweens. No official provenance or ownership of the underlying Microsoft character design is claimed.

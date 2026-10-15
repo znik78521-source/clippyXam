@@ -6,7 +6,7 @@ export interface CompanionSnapshot {
   speechLevel?: number | null;
   clickThrough?: boolean;
   authoredClippy?: boolean;
-  animation?: { name: string; serial: number } | null;
+  animation?: { name: string; serial: number; startedAt?: number } | null;
   autonomous?: boolean;
   sendResult?: { sequence: number; success: boolean; text?: string };
   phase: Mood;

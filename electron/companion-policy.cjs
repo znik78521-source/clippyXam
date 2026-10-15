@@ -45,7 +45,15 @@ function sanitizeCompanionSnapshot(input) {
       typeof input.animation?.name === "string" &&
       /^[A-Za-z0-9_]{1,48}$/.test(input.animation.name) &&
       Number.isSafeInteger(input.animation.serial)
-        ? { name: input.animation.name, serial: input.animation.serial }
+        ? {
+            name: input.animation.name,
+            serial: input.animation.serial,
+            ...(Number.isSafeInteger(input.animation.startedAt) &&
+            input.animation.startedAt >= 0 &&
+            input.animation.startedAt < 1e13
+              ? { startedAt: input.animation.startedAt }
+              : {}),
+          }
         : null,
     sendResult: {
       sequence:

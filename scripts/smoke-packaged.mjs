@@ -291,6 +291,16 @@ try {
     prompt: 0,
     completion: 0,
   });
+  await page
+    .getByRole("textbox", { name: "Сообщение маскоту" })
+    .fill("пошути про снос винды");
+  await page.getByRole("textbox", { name: "Сообщение маскоту" }).press("Enter");
+  await expect(page.locator(".nt-balloon")).toContainText("снесу тебе винду");
+  await expect(page.locator('[data-artwork="authored"]')).toHaveAttribute(
+    "data-authored-action",
+    "WindowsPrank",
+  );
+  expect(await app.evaluate(() => globalThis.__nativeChats.length)).toBe(1);
   await page.screenshot({ path: "release/packaged-owner.png" });
   console.log("Owner onboarding/assets/chat passed; opening widget");
   await page.getByRole("button", { name: "Настройки", exact: true }).click();
@@ -303,8 +313,20 @@ try {
   await expect(
     widget.getByRole("textbox", { name: "Сообщение маскоту" }),
   ).toBeVisible();
-  await expect(widget.locator(".nt-balloon")).toContainText(
-    "Проверка portable",
+  await expect(widget.locator(".nt-balloon")).toContainText("снесу тебе винду");
+  await widget
+    .getByRole("textbox", { name: "Сообщение маскоту" })
+    .fill("покажи сценку с битой");
+  await widget
+    .getByRole("textbox", { name: "Сообщение маскоту" })
+    .press("Enter");
+  await expect(widget.locator('[data-artwork="authored"]')).toHaveAttribute(
+    "data-authored-action",
+    "BatBonk",
+  );
+  expect(await app.evaluate(() => globalThis.__nativeChats.length)).toBe(1);
+  console.log(
+    "Authored comic scenes: Windows button in owner and bat in passive widget, no extra chat requests",
   );
   await expect
     .poll(() =>

@@ -13,7 +13,8 @@ export default function CompanionWindow() {
     Boolean(loaded && snapshot.clickThrough),
     Boolean(
       snapshot.away ||
-      snapshot.animation ||
+      (snapshot.animation &&
+        !(snapshot.character === "clippy" && snapshot.authoredClippy)) ||
       ["peeking", "offended", "rude"].includes(snapshot.phase),
     ),
   );

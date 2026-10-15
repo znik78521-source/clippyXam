@@ -277,3 +277,24 @@ test("quick controls whitelist supported personas and never forward arbitrary co
   assert.equal(snapshot.speechBusy, false);
   assert.equal(snapshot.speaking, true);
 });
+test("comic start time is sanitized so a reopened widget can skip expired scenes", () => {
+  const base = { character: "clippy", phase: "idle", animationMood: "idle" };
+  const animation = {
+    name: "WindowsPrank",
+    serial: 2,
+    startedAt: 1792065600000,
+    secret: "no",
+  };
+  assert.deepEqual(
+    sanitizeCompanionSnapshot({ ...base, animation }).animation,
+    { name: "WindowsPrank", serial: 2, startedAt: 1792065600000 },
+  );
+  for (const startedAt of [NaN, Infinity, -1, "secret", 1e20])
+    assert.equal(
+      sanitizeCompanionSnapshot({
+        ...base,
+        animation: { ...animation, startedAt },
+      }).animation.startedAt,
+      undefined,
+    );
+});

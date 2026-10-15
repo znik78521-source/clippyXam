@@ -4,15 +4,26 @@ export const authoredActions = [
   "InertiaLean",
   "InertiaImpact",
   "Curious",
+  "WindowsPrank",
+  "BatBonk",
 ];
 export const authoredLabels: Record<string, string> = {
   InertiaGentle: "Плавное движение",
   InertiaLean: "Средняя скорость — наклон",
   InertiaImpact: "Сильный рывок — удар",
   Curious: "Любопытство",
+  WindowsPrank: "Снос винды — бутафорская кнопка",
+  BatBonk: "Бита — ударное тестирование",
 };
 export type ClippyArt = Record<
-  "neutral" | "left" | "right" | "curious",
+  | "neutral"
+  | "left"
+  | "right"
+  | "curious"
+  | "windowsArmed"
+  | "windowsPunchline"
+  | "batWindup"
+  | "batStrike",
   HTMLImageElement
 >;
 let cache: Promise<ClippyArt> | undefined;
@@ -24,6 +35,10 @@ export function loadClippyArt() {
         left: "impact-left",
         right: "impact-right",
         curious: "curious",
+        windowsArmed: "windows-armed",
+        windowsPunchline: "windows-punchline",
+        batWindup: "bat-windup",
+        batStrike: "bat-strike",
       }).map(async ([key, name]) => {
         const image = new Image();
         image.src = `/authored/clippy/${name}.png`;

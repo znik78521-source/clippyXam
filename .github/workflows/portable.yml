@@ -89,13 +89,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = 'v0.9.1-portable'
+          $tag = 'v0.10.0-portable'
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $sha = (Get-ChildItem release/*.exe.sha256).FullName
           $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           $notes = @"
           ## Portable для Windows 10/11 x64 — без установщика
-          Скачайте **clippyXam-0.9.1-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+          Скачайте **clippyXam-0.10.0-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+
+          В 0.10 две новые сценки Скрепки: бутафорская кнопка «сноса винды» и ударное тестирование игрушечной битой с короткими нарисованными трещинами внутри сцены. Четыре новых рисунка, смена ключевых поз и локальная деформация, не готовые Agent-кадры и не полная покадровая перерисовка. Сценки не запускают shell, удаление файлов или системные операции.
+
+          Напишите «пошути про снос винды» или «покажи сценку с битой»: сценка и реплика работают локально без запроса к модели, после обычного подключения приложения. Также доступны Настройки → Поведение → Новая анимация. Первый автоматический прикол возможен после третьего подходящего короткого ответа; далее не чаще раза в три минуты и пяти успешных ответов. Четыре варианта про Windows и три про биту чередуются. Полезный ответ сохраняется полностью; ошибки API не становятся поводом для шуток. Мягкий режим и запрет грубых реакций отключают эти сценки; «не шути»/«без угроз» переключает мягкий режим. Фоновые реплики выключают автоматические вставки, но не явный запрос сценки.
+
+          Сценки передаются пассивному виджету с временем начала: старые не перезапускаются после открытия. Консервативный hit-map действует только во время движения, затем возвращается альфа-маска. Reduced motion оставляет реплику без движения. Новые рисунки пока только у Скрепки; Rover/Merlin не подменены.
 
           В 0.9.1 наклон усилен уже при небольшом ускорении относительно плавного движения. Сила перемещения тела и тряска печати не увеличены: заметный изгиб не должен превращаться в удар. Просмотр средней скорости замедлен, а native smoke проверяет реальное движение примерно 240 DIP/s вместо 500 DIP/s.
 
@@ -128,7 +134,7 @@ jobs:
           $notes | Set-Content -Encoding utf8 release/release-notes.md
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.9.1 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.10.0 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Report smoke failure diagnostics
         if: failure()

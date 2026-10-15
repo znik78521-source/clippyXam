@@ -1,9 +1,12 @@
 import { test, expect } from "@playwright/test";
 async function ready(page: any) {
-  await page.goto("/artwork/prototype/index.html");
-  await page.waitForFunction(() => (window as any).__inertiaDemo);
+  // Install the clock before the prototype records performance.now(). Otherwise
+  // its first post-install frame can see a long dt and discard the pointer impulse.
   await page.clock.install({ time: new Date("2026-10-15T12:00:00Z") });
   await page.clock.pauseAt(new Date("2026-10-15T12:00:01Z"));
+  await page.goto("/artwork/prototype/index.html");
+  await page.waitForFunction(() => (window as any).__inertiaDemo);
+  await page.clock.runFor(32);
 }
 test("review prototype gentle movement stays gentle; violent pull hits opposite edge and recovers", async ({
   page,

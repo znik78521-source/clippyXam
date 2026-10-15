@@ -1,3 +1,8 @@
+import {
+  drawComicScene,
+  isComicScene,
+  sceneDuration,
+} from "../lib/authored-scenes";
 import { useEffect, useRef, useState } from "react";
 import type { Mood } from "../lib/characters";
 import type { WindowMotion } from "../lib/window-motion";
@@ -8,7 +13,7 @@ export default function AuthoredClippy(props: {
   typingPulse: number;
   mood: Mood;
   autonomous?: boolean;
-  animation?: { name: string; serial: number } | null;
+  animation?: { name: string; serial: number; startedAt?: number } | null;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     controls = useRef(props);
@@ -69,7 +74,9 @@ export default function AuthoredClippy(props: {
             else
               model.velocity(c.motion.velocityX ?? 0, c.motion.velocityY ?? 0);
           }
+          if (!c.animation) preview = null;
           if (c.typingPulse !== lastPulse) {
+            preview = null;
             lastPulse = c.typingPulse;
             typingAt = now;
             idleUntil = 0;
@@ -77,7 +84,14 @@ export default function AuthoredClippy(props: {
           }
           if (c.animation && c.animation.serial !== lastPreview) {
             lastPreview = c.animation.serial;
-            preview = { name: c.animation.name, at: now };
+            preview = {
+              name: c.animation.name,
+              at:
+                now -
+                (isComicScene(c.animation.name) && c.animation.startedAt
+                  ? Math.max(0, Date.now() - c.animation.startedAt)
+                  : 0),
+            };
           }
           if (media.matches) {
             preview = null;
@@ -88,6 +102,8 @@ export default function AuthoredClippy(props: {
               idleUntil = now + 50;
               idleIndex = 1;
               if (elapsed > 2) preview = null;
+            } else if (isComicScene(preview.name)) {
+              if (elapsed >= sceneDuration(preview.name)) preview = null;
             } else {
               const duration =
                 preview.name === "InertiaGentle"
@@ -116,6 +132,7 @@ export default function AuthoredClippy(props: {
                 Math.abs(state.bend) >
                 1 || !!state.impact;
           if (moving) {
+            if (preview && isComicScene(preview.name)) preview = null;
             idleUntil = 0;
             idleAt = now + 5000;
           }
@@ -149,8 +166,19 @@ export default function AuthoredClippy(props: {
             curious,
             breath,
           });
+          const comic = preview && isComicScene(preview.name) ? preview : null;
+          element.dataset.scenePhase = comic
+            ? drawComicScene(
+                ctx,
+                art,
+                comic.name as "WindowsPrank" | "BatBonk",
+                (now - comic.at) / 1000,
+                element.width,
+                element.height,
+              )
+            : "";
           element.dataset.inertiaActive = String(
-            moving || Math.abs(typing) > 0.05,
+            moving || Math.abs(typing) > 0.05 || !!comic,
           );
           element.dataset.motionState = state.impact
             ? "impact"
@@ -163,15 +191,17 @@ export default function AuthoredClippy(props: {
           element.dataset.offset = state.x.toFixed(2);
           element.dataset.impact = state.impact?.side || "";
           element.dataset.typingShake = typing.toFixed(2);
-          element.dataset.authoredAction = curious
-            ? "Curious"
-            : idle
-              ? "Stretch"
-              : state.impact
-                ? "Impact"
-                : moving
-                  ? "Inertia"
-                  : "Neutral";
+          element.dataset.authoredAction = comic
+            ? comic.name
+            : curious
+              ? "Curious"
+              : idle
+                ? "Stretch"
+                : state.impact
+                  ? "Impact"
+                  : moving
+                    ? "Inertia"
+                    : "Neutral";
           element.dataset.frame = String(
             Number(element.dataset.frame || 0) + 1,
           );

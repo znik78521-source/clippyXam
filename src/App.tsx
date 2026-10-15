@@ -1,3 +1,9 @@
+import {
+  ComedyDirector,
+  requestedComicScene,
+  type ComicScene,
+} from "./lib/comedy";
+import { isComicScene } from "./lib/authored-scenes";
 import { publicSettings } from "./lib/saved-settings";
 import { useEffect, useRef, useState } from "react";
 import { CompanionScene } from "./components/CompanionScene";
@@ -49,6 +55,7 @@ const welcome = (character: Character): Message => ({
 });
 export default function App() {
   const modelCatalog = useFreeModels();
+  const comedy = useRef(new ComedyDirector());
   const [character, setCharacter] = useState(characters[0]);
   const [messages, setMessages] = useState<Message[]>(() => [
     welcome(characters[0]),
@@ -158,6 +165,7 @@ export default function App() {
   const [animation, setAnimation] = useState<{
     name: string;
     serial: number;
+    startedAt?: number;
   } | null>(null);
   useEffect(() => {
     if (!animation) return;
@@ -270,7 +278,7 @@ export default function App() {
     if (persist) persistBehavior({ intensity: value });
     intensityRef.current = value;
     setIntensity(value);
-    if (value === "soft" && phase === "rude") {
+    if (value === "soft") {
       clearTimers();
       setPhase(awayRef.current > Date.now() ? "away" : "idle");
     }
@@ -345,7 +353,7 @@ export default function App() {
       ready,
     );
   }
-  function applyReply(incoming: Reply, forgiven = false) {
+  function applyReply(incoming: Reply, forgiven = false, comic?: ComicScene) {
     const reply =
       (intensityRef.current === "soft" || !settings.companion.allowRude) &&
       incoming.mood === "rude"
@@ -353,7 +361,15 @@ export default function App() {
         : incoming;
     clearTimers();
     lastReplyText.current = reply.text;
-    speak(reply.text, () => setBubble(reply.text));
+    speak(reply.text, () => {
+      setBubble(reply.text);
+      if (comic && character.id === "clippy" && settings.authoredClippy)
+        setAnimation({
+          name: comic,
+          serial: ++animationSerial.current,
+          startedAt: Date.now(),
+        });
+    });
     if (forgiven) setAway(0);
     if (
       reply.leaveSeconds > 0 &&
@@ -442,9 +458,32 @@ export default function App() {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       let reply: Reply;
+      let comic: ComicScene | undefined;
+      const requested = requestedComicScene(content);
+      const comedyContext = {
+        character: character.id,
+        intensity: effectiveIntensity,
+        allowRude: settings.companion.allowRude,
+        backgroundQuips: settings.companion.backgroundQuips && !quiet,
+        away: awayRef.current > Date.now(),
+      };
       if (gentle) {
         reply = {
           text: "Понял. Без подколов, мата и жестов. Переключился в мягкий режим.",
+          mood: "speaking",
+          leaveSeconds: 0,
+        };
+      } else if (requested) {
+        const beat = comedy.current.explicit(
+          requested,
+          comedyContext,
+          Date.now(),
+        );
+        comic = beat?.scene;
+        reply = {
+          text:
+            beat?.text ||
+            "Сценки с угрозами выключены в мягком режиме, при запрете грубых реакций или во время отсутствия.",
           mood: "speaking",
           leaveSeconds: 0,
         };
@@ -464,6 +503,23 @@ export default function App() {
         });
       }
       if (id !== requestId.current) return;
+      if (
+        !gentle &&
+        !requested &&
+        !isApology(content) &&
+        reply.leaveSeconds === 0 &&
+        !/винд|windows|бутафор/i.test(reply.text)
+      ) {
+        const beat = comedy.current.afterReply(
+          comedyContext,
+          Date.now(),
+          reply.text.length,
+        );
+        if (beat) {
+          comic = beat.scene;
+          reply = { ...reply, text: `${beat.text}\n\n${reply.text}` };
+        }
+      }
       setMessages((current) =>
         [
           ...current,
@@ -475,7 +531,7 @@ export default function App() {
           },
         ].slice(-100),
       );
-      applyReply(reply, isApology(content) || gentle);
+      applyReply(reply, isApology(content) || gentle, comic);
       setSendResult({ sequence: id, success: true });
     } catch (cause) {
       if (id !== requestId.current) return;
@@ -824,7 +880,29 @@ export default function App() {
               .join("\n")}
             onPreview={(name) => {
               closeSettings();
-              setAnimation({ name, serial: ++animationSerial.current });
+              if (isComicScene(name)) {
+                const beat = comedy.current.explicit(
+                  name,
+                  {
+                    character: character.id,
+                    intensity: intensityRef.current,
+                    allowRude: settings.companion.allowRude,
+                    backgroundQuips: settings.companion.backgroundQuips,
+                    away: awayRef.current > Date.now(),
+                  },
+                  Date.now(),
+                );
+                if (beat)
+                  applyReply(
+                    { text: beat.text, mood: "speaking", leaveSeconds: 0 },
+                    false,
+                    beat.scene,
+                  );
+                else
+                  setToast(
+                    "Сценки с угрозами отключены текущим режимом поведения.",
+                  );
+              } else setAnimation({ name, serial: ++animationSerial.current });
             }}
             onSave={saveSettings}
             onClose={closeSettings}

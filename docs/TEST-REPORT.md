@@ -4,7 +4,11 @@
 
 Браузерная проверка теперь требует заметного изгиба уже от 220 DIP/s вместо 450. Packaged smoke: шаг 12 px каждые 50 ms (~240 DIP/s) вместо 25 px; изгиб >10 px и ни одного столкновения, затем отдельный сильный рывок. Превью среднего движения замедлено до 1.4 s.
 
-Локально прошли типы, production build и **184 теста**: 71 logic, 71 Electron unit/mock, 5 launcher, 37 browser. Для одного и того же разгона 220 DIP/s пик изгиба вырос с 6.497 до 10.996 px, перемещение осталось 9.672 px. Windows и публикация пока не подтверждены. Исторический отчёт 0.9 ниже.
+Локально прошли типы, production build и **184 теста**: 71 logic, 71 Electron unit/mock, 5 launcher, 37 browser. Для одного и того же разгона 220 DIP/s пик изгиба вырос с 6.497 до 10.996 px, перемещение осталось 9.672 px. Windows также прошёл: [CI 38708927242](https://github.com/znik78521-source/clippyXam/actions/runs/38708927242), **5 минут 23 секунды**, commit `834e597d6944d8049650064dc5eb8289991da756`. Успешны все 184 теста, сборка, настоящий native low-medium bend без столкновения и отдельный сильный удар, Piper, packaged/portable launch и публикация. Piper cold/warm: 686/243 мс на runner; не гарантия пользовательской задержки.
+
+[Portable 0.9.1](https://github.com/znik78521-source/clippyXam/releases/tag/v0.9.1-portable): [clippyXam-0.9.1-win-x64-portable.exe](https://github.com/znik78521-source/clippyXam/releases/download/v0.9.1-portable/clippyXam-0.9.1-win-x64-portable.exe), **122455333 байт**, SHA-256 `f43d98ccf1ff2af0d92e7120da67ba0f706031642694f0b24b16fcde7dfe5623`. Хеш release notes совпадает с digest GitHub asset. Предварительная сборка без подписи; прежние релизы и данные не удалены, PR #1 открыт. Физический drag/DPI и аппаратный QA пользователя остаются непроверенными.
+
+Исторический отчёт 0.9 ниже.
 
 ---
 

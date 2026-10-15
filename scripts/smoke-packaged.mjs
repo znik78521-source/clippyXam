@@ -60,6 +60,11 @@ try {
       async () => (await window.clippyDesktop.loadSavedKey()).key,
     ),
   ).toBe("smoke-test-not-a-real-key");
+  // Defaults need not create a preference file. An actual UI edit must autosave it.
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page
+    .getByLabel("Пропускать клики через прозрачные участки виджета")
+    .check();
   await expect
     .poll(() =>
       fs
@@ -68,6 +73,7 @@ try {
         .catch(() => false),
     )
     .toBe(true);
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
   // Real on-disk preference round trip; keys/chats must never enter this file.
   await page.evaluate(async () => {
     await window.clippyDesktop.saveSettings({

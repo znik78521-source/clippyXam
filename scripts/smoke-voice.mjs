@@ -68,14 +68,15 @@ try {
   if (!recovered || recovered.length < 1000)
     throw new Error("No recovery after cancellation");
   console.log(
-    JSON.stringify({
-      coldMs,
-      warmMs,
-      normalAudioSeconds: (wav.length - 44) / 44100,
-      fasterAudioSeconds: (faster.length - 44) / 44100,
-      starts,
-      cancellationRecovery: true,
-    }),
+    "::notice title=Piper synthesis timings::" +
+      JSON.stringify({
+        coldMs,
+        warmMs,
+        normalAudioSeconds: (wav.length - 44) / 44100,
+        fasterAudioSeconds: (faster.length - 44) / 44100,
+        starts,
+        cancellationRecovery: true,
+      }),
   );
   console.log(
     "Warm engine reuse and rate change passed:",

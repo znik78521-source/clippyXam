@@ -1,3 +1,4 @@
+import { SpritePlayer } from "./animation";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -39,4 +40,14 @@ test("speech chunks retain complete reply and start with a short first phrase", 
   assert.ok(chunks[0].length < 60);
   assert.equal(chunks.join(" ").replace(/\s+/g, " ").trim(), text.trim());
   assert.ok(chunks.every((c) => c.length <= 2500));
+});
+
+test("explicit idle actions bypass original 85–97 percent opening skip guards, not internal frames", async () => {
+  const source = (await import("clippyjs/agents/clippy")).default;
+  const data = (await source.agent()).default;
+  for (const name of ["IdleAtom", "IdleHeadScratch"]) {
+    const player = new SpritePlayer(data, () => 0.5, { forceOpening: true });
+    player.request(name, 0, 60000);
+    assert.deepEqual(player.tick(100), data.animations[name].frames[1]);
+  }
 });

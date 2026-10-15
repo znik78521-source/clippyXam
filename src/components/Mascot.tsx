@@ -76,7 +76,9 @@ export default function Mascot({
   }, [id]);
   useEffect(() => {
     if (!sprite) return;
-    const player = new SpritePlayer(sprite.data);
+    const player = new SpritePlayer(sprite.data, Math.random, {
+      forceOpening: true,
+    });
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;

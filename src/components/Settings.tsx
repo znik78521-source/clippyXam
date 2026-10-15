@@ -104,8 +104,31 @@ export default function Settings({
     chain.current = task;
     return task;
   }
-  async function close() {
-    if (await flush()) onClose();
+  const closing = useRef(false),
+    previewRef = useRef(preview);
+  previewRef.current = preview;
+  async function close(showPreview = false) {
+    if (closing.current) return;
+    closing.current = true;
+    try {
+      while (active.current) {
+        const stamp = JSON.stringify(draftRef.current);
+        if (!(await flush())) return;
+        // A slow disk must not lose an edit made after X/Escape was pressed.
+        if (stamp !== JSON.stringify(draftRef.current)) continue;
+        if (showPreview) {
+          const actions = originalActions[draftRef.current.character];
+          onPreview?.(
+            actions.includes(previewRef.current)
+              ? previewRef.current
+              : actions[0],
+          );
+        } else onClose();
+        return;
+      }
+    } finally {
+      closing.current = false;
+    }
   }
   useEffect(() => {
     active.current = true;
@@ -618,17 +641,7 @@ export default function Settings({
               <option key={name}>{name}</option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={async () => {
-              if (await flush())
-                onPreview?.(
-                  originalActions[draft.character].includes(preview)
-                    ? preview
-                    : originalActions[draft.character][0],
-                );
-            }}
-          >
+          <button type="button" onClick={() => void close(true)}>
             Показать анимацию
           </button>
           <p className="field-help">

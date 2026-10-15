@@ -323,8 +323,8 @@ test("autosave serializes edits; failure stays visible and close flush retries l
   await expect
     .poll(() => page.evaluate(() => (window as any).__saving))
     .toBe(1);
-  await page.getByLabel("Персонаж", { exact: true }).selectOption("rover");
   await page.keyboard.press("Escape");
+  await page.getByLabel("Персонаж", { exact: true }).selectOption("rover");
   await page.evaluate(() => (window as any).__release());
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(

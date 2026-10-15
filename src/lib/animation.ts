@@ -66,6 +66,7 @@ export class SpritePlayer {
   constructor(
     private data: SpriteData,
     private random = Math.random,
+    private options: { forceOpening?: boolean } = {},
   ) {}
   request(name: string, now: number, repeatDelay = 500) {
     const desired = this.data.animations[name]?.frames.length
@@ -111,12 +112,19 @@ export class SpritePlayer {
       this.exiting = true;
       this.exitUntil = now + 2000;
     }
-    const next = nextFrame(
-      this.data.animations[this.current],
-      this.index,
-      this.exiting,
-      this.random,
-    );
+    const animation = this.data.animations[this.current];
+    let next = nextFrame(animation, this.index, this.exiting, this.random);
+    // Agent idle packs contain 85–97% opening branches which skip the entire
+    // action. Our director already schedules idle frequency: an explicit action
+    // must actually start, while all internal branches/exit frames stay original.
+    if (
+      this.options.forceOpening &&
+      this.index === 0 &&
+      !this.exiting &&
+      animation.frames.length > 2 &&
+      (next === "hold" || next === animation.frames.length - 1)
+    )
+      next = 1;
     if (next === null) this.finish(now);
     else if (next === "hold") this.nextAt = now + 80;
     else {

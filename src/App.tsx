@@ -158,6 +158,18 @@ export default function App() {
     name: string;
     serial: number;
   } | null>(null);
+  useEffect(() => {
+    if (!animation) return;
+    const serial = animation.serial;
+    const timer = setTimeout(
+      () =>
+        setAnimation((current) =>
+          current?.serial === serial ? null : current,
+        ),
+      7000,
+    );
+    return () => clearTimeout(timer);
+  }, [animation?.serial]);
   const animationSerial = useRef(0),
     lastDeparture = useRef(0);
   const [sendResult, setSendResult] = useState<{

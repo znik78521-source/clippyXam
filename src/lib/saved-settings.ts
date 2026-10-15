@@ -12,6 +12,7 @@ export type SavedSettings = Partial<
     | "ttsProvider"
     | "clickThrough"
     | "speechMotion"
+    | "authoredClippy"
   >
 > & {
   systemVoices?: Partial<SettingsData["systemVoices"]>;
@@ -29,6 +30,7 @@ export function publicSettings(s: SettingsData): SavedSettings {
     ttsProvider: s.ttsProvider === "openai" ? "local" : s.ttsProvider,
     clickThrough: s.clickThrough,
     speechMotion: s.speechMotion,
+    authoredClippy: s.authoredClippy,
     systemVoices: { ...s.systemVoices },
     companion: { ...s.companion },
   };

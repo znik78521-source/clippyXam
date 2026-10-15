@@ -1,3 +1,4 @@
+import AuthoredClippy from "./AuthoredClippy";
 import { useWindowMotion } from "../lib/useWindowMotion";
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Settings, Minus, X, Maximize2 } from "lucide-react";
@@ -160,16 +161,29 @@ export function CompanionScene({
             </button>
           )}
         </div>
-        <div className="nt-actor" data-companion-hit>
-          <Mascot
-            id={snapshot.character}
-            mood={snapshot.animationMood}
-            size={snapshot.character === "clippy" ? 205 : 176}
-            autonomous={snapshot.autonomous}
-            animation={snapshot.animation}
-            typingPulse={typingPulse}
-            motion={motion}
-          />
+        <div
+          className={`nt-actor ${snapshot.character === "clippy" && snapshot.authoredClippy ? "nt-actor-authored" : ""}`}
+          data-companion-hit
+        >
+          {snapshot.character === "clippy" && snapshot.authoredClippy ? (
+            <AuthoredClippy
+              mood={snapshot.animationMood}
+              autonomous={snapshot.autonomous}
+              animation={snapshot.animation}
+              typingPulse={typingPulse}
+              motion={motion}
+            />
+          ) : (
+            <Mascot
+              id={snapshot.character}
+              mood={snapshot.animationMood}
+              size={snapshot.character === "clippy" ? 205 : 176}
+              autonomous={snapshot.autonomous}
+              animation={snapshot.animation}
+              typingPulse={typingPulse}
+              motion={motion}
+            />
+          )}
         </div>
       </div>
       <footer className="nt-composer" data-companion-hit>

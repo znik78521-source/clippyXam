@@ -36,6 +36,7 @@ function sanitizeCompanionSnapshot(input) {
   return {
     character: input.character,
     clickThrough: input.clickThrough === true,
+    authoredClippy: input.authoredClippy === true,
     speechLevel: Number.isFinite(input.speechLevel)
       ? Math.round(Math.max(0, Math.min(1, input.speechLevel)) * 15) / 15
       : null,

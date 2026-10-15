@@ -67,6 +67,7 @@ export default function App() {
     widget: false,
     clickThrough: false,
     speechMotion: false,
+    authoredClippy: true,
     key: "",
     model: DEFAULT_MODEL,
     autoFallback: true,
@@ -626,6 +627,7 @@ export default function App() {
   const companionSnapshot: CompanionSnapshot = {
     character: character.id,
     clickThrough: settings.clickThrough,
+    authoredClippy: settings.authoredClippy,
     sendResult,
     animation,
     autonomous:
@@ -732,6 +734,7 @@ export default function App() {
     awayUntil,
     seconds,
     settings.clickThrough,
+    settings.authoredClippy,
     speech.progress,
     speech.busy,
     speech.speaking,

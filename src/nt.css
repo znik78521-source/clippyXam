@@ -706,3 +706,9 @@ legend svg {
   margin-top: 5px;
   color: #555;
 }
+/* A full movement area for new artwork: collisions touch the window's edges,
+   not the edge of the old 224px sprite box. No flat-image rotation. */
+.nt-stage .nt-actor-authored {left:5px;right:5px;width:auto;bottom:4px;height:calc(100% - 100px);max-height:250px;min-height:140px;transform:none;}
+.authored-clippy {width:100%;height:100%;position:relative;}
+.authored-clippy canvas {width:100%;height:100%;}
+.artwork-error {position:absolute;inset:20px;font-size:11px;color:#666;}

@@ -10,6 +10,12 @@ async function connect(page: Page) {
   await page.goto("/");
   await page.getByLabel("API-ключ OpenRouter").fill("test-only-key");
   await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  // This suite preserves the legacy Agent player checks. Authored artwork has
+  // its own integration suite; the real application defaults to the new mode.
+  await page.getByRole("button", { name: "Настройки", exact: true }).click();
+  await page.getByRole("tab", { name: "Поведение", exact: true }).click();
+  await page.getByLabel("Новая Скрепка: инерция и удары").uncheck();
+  await page.getByRole("button", { name: "Готово", exact: true }).click();
 }
 async function send(page: Page, text: string) {
   await page.getByRole("textbox", { name: "Сообщение маскоту" }).fill(text);

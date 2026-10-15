@@ -10,7 +10,13 @@ function sanitizeSettings(input) {
     ttsProvider: ["local", "system"],
   }))
     if (values.includes(input[key])) out[key] = input[key];
-  for (const key of ["sound", "autoFallback", "clickThrough", "speechMotion"])
+  for (const key of [
+    "sound",
+    "autoFallback",
+    "clickThrough",
+    "speechMotion",
+    "authoredClippy",
+  ])
     if (typeof input[key] === "boolean") out[key] = input[key];
   if (
     typeof input.model === "string" &&

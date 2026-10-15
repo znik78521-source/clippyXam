@@ -9,3 +9,7 @@ public/agents/
 release/
 clippyXam-data/
 voice-engine/
+# Rendered review clips and superseded pose-morph experiment; keep source artwork.
+artwork/prototype/*study.gif
+artwork/prototype/clippy-lean-*.png
+artwork/prototype/render.py

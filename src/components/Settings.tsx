@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
 import Dialog from "./Dialog";
+import { authoredActions, authoredLabels } from "../lib/authored-clippy";
 import { originalActions } from "../lib/original-animations";
 import { characters } from "../lib/characters";
 import type { useFreeModels } from "../lib/useFreeModels";
@@ -14,6 +15,7 @@ export interface SettingsData {
   widget: boolean;
   clickThrough: boolean;
   speechMotion: boolean;
+  authoredClippy: boolean;
   key: string;
   model: string;
   autoFallback: boolean;
@@ -117,7 +119,11 @@ export default function Settings({
         // A slow disk must not lose an edit made after X/Escape was pressed.
         if (stamp !== JSON.stringify(draftRef.current)) continue;
         if (showPreview) {
-          const actions = originalActions[draftRef.current.character];
+          const actions =
+            draftRef.current.character === "clippy" &&
+            draftRef.current.authoredClippy
+              ? authoredActions
+              : originalActions[draftRef.current.character];
           onPreview?.(
             actions.includes(previewRef.current)
               ? previewRef.current
@@ -629,26 +635,49 @@ export default function Settings({
           hidden={tab !== "behavior"}
         >
           <legend>Характер и границы</legend>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.authoredClippy}
+              onChange={(e) => {
+                setPreview("");
+                setDraft({ ...draft, authoredClippy: e.target.checked });
+              }}
+            />
+            Новая Скрепка: инерция и удары
+          </label>
+          <p className="field-help">
+            Новая отрисовка пока для Скрепки: плавное движение, заметный наклон
+            на средней скорости и удар при сильном рывке. Rover и Merlin пока в
+            исходном режиме. Отключение флажка возвращает старую Скрепку.
+          </p>
           <label className="field-label" htmlFor="original-preview">
-            Оригинальная анимация
+            {draft.character === "clippy" && draft.authoredClippy
+              ? "Новая анимация"
+              : "Оригинальная анимация"}
           </label>
           <select
             id="original-preview"
-            value={preview || originalActions[draft.character][0]}
-            onChange={(event) => setPreview(event.target.value)}
+            value={
+              preview ||
+              (draft.character === "clippy" && draft.authoredClippy
+                ? authoredActions
+                : originalActions[draft.character])[0]
+            }
+            onChange={(e) => setPreview(e.target.value)}
           >
-            {originalActions[draft.character].map((name) => (
-              <option key={name}>{name}</option>
+            {(draft.character === "clippy" && draft.authoredClippy
+              ? authoredActions
+              : originalActions[draft.character]
+            ).map((name) => (
+              <option key={name} value={name}>
+                {authoredLabels[name] || name}
+              </option>
             ))}
           </select>
           <button type="button" onClick={() => void close(true)}>
             Показать анимацию
           </button>
-          <p className="field-help">
-            Только оригинальные кадры выбранного персонажа. Самостоятельные
-            действия включаются ниже; накладок с битой, огнём и закапыванием
-            больше нет.
-          </p>
           <label className="field-label" htmlFor="intensity">
             Характер
           </label>
@@ -677,7 +706,7 @@ export default function Settings({
                 })
               }
             />
-            Самостоятельные оригинальные анимации и выглядывание
+            Самостоятельные анимации и выглядывание
           </label>
           <label className="setting-check">
             <input

@@ -107,6 +107,86 @@ try {
   await expect(
     page.getByRole("img", { name: "clippy", exact: true }),
   ).toBeVisible();
+  // Exercise REAL BrowserWindow movement -> native velocity IPC -> generated renderer.
+  await expect(page.locator('canvas[data-artwork="authored"]')).toHaveAttribute(
+    "data-ready",
+    "true",
+  );
+  await page.evaluate(() => {
+    globalThis.__motionSamples = [];
+    globalThis.__maxBend = 0;
+    globalThis.__impactSides = [];
+    window.clippyDesktop.onWindowMotion((value) => {
+      globalThis.__motionSamples.push(value);
+      if (globalThis.__motionSamples.length > 100)
+        globalThis.__motionSamples.shift();
+    });
+    globalThis.__motionSampler = setInterval(() => {
+      const c = document.querySelector('[data-artwork="authored"]');
+      globalThis.__maxBend = Math.max(
+        globalThis.__maxBend,
+        Math.abs(Number(c?.dataset.bend || 0)),
+      );
+      if (c?.dataset.impact) globalThis.__impactSides.push(c.dataset.impact);
+    }, 16);
+  });
+  await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.setPosition(100, 100);
+  });
+  // Exclude setup repositioning from the measured medium-drag phase.
+  await page.waitForTimeout(2500);
+  await expect(page.locator('[data-artwork="authored"]')).toHaveAttribute(
+    "data-motion-state",
+    "rest",
+  );
+  await page.evaluate(() => {
+    globalThis.__maxBend = 0;
+    globalThis.__impactSides = [];
+    globalThis.__motionSamples = [];
+  });
+  await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    for (let i = 1; i <= 8; i++) {
+      w.setPosition(100 + i * 25, 100);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  });
+  await expect
+    .poll(() => page.evaluate(() => globalThis.__maxBend))
+    .toBeGreaterThan(4);
+  expect(await page.evaluate(() => globalThis.__impactSides)).toEqual([]);
+  const samples = await page.evaluate(() => globalThis.__motionSamples);
+  expect(samples.some((s) => s.velocityX > 100 && !s.reset)).toBe(true);
+  expect(
+    samples.every(
+      (s) =>
+        !("x" in s) &&
+        !("y" in s) &&
+        Math.abs(s.velocityX) <= 4000 &&
+        Math.abs(s.velocityY) <= 4000,
+    ),
+  ).toBe(true);
+  await expect(page.locator('[data-artwork="authored"]')).toHaveAttribute(
+    "data-motion-state",
+    "rest",
+    { timeout: 10000 },
+  );
+  await page.evaluate(() => {
+    globalThis.__impactSides = [];
+  });
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const [x, y] = w.getPosition();
+    w.setPosition(x + 350, y);
+  });
+  await expect
+    .poll(() => page.evaluate(() => globalThis.__impactSides.includes("left")))
+    .toBe(true);
+  await page.evaluate(() => clearInterval(globalThis.__motionSampler));
+  console.log(
+    "REAL native window movement: medium bend, bounded private velocity and left-wall impact passed",
+  );
   const assets = await page.evaluate(async () => {
     const r = await fetch("/agents/clippy/agent.json");
     const img = new Image();
@@ -238,6 +318,28 @@ try {
     .poll(() => widget.evaluate(() => window.clippyCompanion.getPointerState()))
     .toMatchObject({ available: true, enabled: true });
   await expect(widget.locator("canvas[data-companion-alpha]")).toBeVisible();
+  await expect(
+    widget.locator('canvas[data-artwork="authored"]'),
+  ).toHaveAttribute("data-ready", "true");
+  await widget.evaluate(() => {
+    globalThis.__widgetMotion = [];
+    window.clippyCompanion.onWindowMotion((v) =>
+      globalThis.__widgetMotion.push(v),
+    );
+  });
+  await app.evaluate(async ({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((w) => w.isVisible());
+    w.setPosition(100, 100);
+    await new Promise((r) => setTimeout(r, 200));
+    w.setPosition(200, 100);
+  });
+  await expect
+    .poll(() =>
+      widget.evaluate(() =>
+        globalThis.__widgetMotion.some((v) => v.velocityX > 0 && !v.reset),
+      ),
+    )
+    .toBe(true);
   await widget.screenshot({ path: "release/packaged-widget.png" });
   await widget.getByRole("button", { name: "Настройки", exact: true }).click();
   await expect(

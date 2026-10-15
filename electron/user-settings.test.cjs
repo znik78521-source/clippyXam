@@ -87,3 +87,11 @@ test("0.7 preferences migrate to standard free router and faster speech once; ne
   assert.equal((await f.store.load()).settings.model, "qwen/qwen3-4b:free");
   assert.equal((await f.store.load()).settings.rate, 1.5);
 });
+test("new Clippy preference round-trips without opting other characters into unbuilt art", async (t) => {
+  const f = await fixture(t);
+  await f.store.save({ authoredClippy: true, character: "rover" });
+  assert.equal((await f.store.load()).settings.authoredClippy, true);
+  assert.equal((await f.store.load()).settings.character, "rover");
+  await f.store.save({ authoredClippy: false });
+  assert.equal((await f.store.load()).settings.authoredClippy, false);
+});

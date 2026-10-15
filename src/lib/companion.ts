@@ -5,6 +5,7 @@ export interface CompanionSnapshot {
   character: CharacterId;
   speechLevel?: number | null;
   clickThrough?: boolean;
+  authoredClippy?: boolean;
   animation?: { name: string; serial: number } | null;
   autonomous?: boolean;
   sendResult?: { sequence: number; success: boolean; text?: string };

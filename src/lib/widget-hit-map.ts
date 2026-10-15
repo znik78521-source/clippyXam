@@ -10,6 +10,9 @@ export function collectHitMap(interacting: boolean, complex = false): HitMap {
     height = window.innerHeight;
   const rects: HitMap["rects"] = [],
     masks: NonNullable<HitMap["masks"]> = [];
+  complex =
+    complex ||
+    Boolean(document.querySelector('canvas[data-inertia-active="true"]'));
   if (!complex)
     for (const canvas of document.querySelectorAll<HTMLCanvasElement>(
       "canvas[data-companion-alpha]",

@@ -280,6 +280,14 @@ try {
     .getByLabel("Пропускать клики через прозрачные участки виджета")
     .check();
   await page.getByRole("button", { name: "Готово", exact: true }).click();
+  // The deliberately forceful wall-impact test above has a short rebound. Wait
+  // until native inertia settles before checking a scene, which correctly gives
+  // active window motion priority over authored comedy.
+  await expect(page.locator('[data-artwork="authored"]')).toHaveAttribute(
+    "data-motion-state",
+    "rest",
+    { timeout: 10000 },
+  );
 
   const nativeChats = await app.evaluate(() => globalThis.__nativeChats);
   expect(nativeChats).toHaveLength(1);

@@ -48,6 +48,39 @@ test("native catalogue request carries no key or body", async (t) => {
     data: [],
   });
 });
+test("temporary native BUSY slots queue the chat instead of failing it immediately", async (t) => {
+  let calls = 0;
+  withBridge(t, {
+    openRouterRequest: async () =>
+      ++calls < 3
+        ? { error: "BUSY" }
+        : { status: 200, data: { choices: [] } },
+    openRouterCancel: async () => {},
+  });
+  const result = await openRouterFetch("chat", {
+    method: "POST",
+    headers: { Authorization: "Bearer test-key" },
+    body: JSON.stringify({ model: "test/model:free" }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(calls, 3);
+});
+test("native BUSY-slot retry remains cancellable", async (t) => {
+  const controller = new AbortController();
+  let calls = 0;
+  withBridge(t, {
+    openRouterRequest: async () => {
+      calls++;
+      return { error: "BUSY" };
+    },
+    openRouterCancel: async () => {},
+  });
+  const pending = openRouterFetch("models", { signal: controller.signal });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  controller.abort();
+  await assert.rejects(() => pending, { name: "AbortError" });
+  assert.equal(calls, 1);
+});
 test("abort cancels exact native operation, settles immediately, ignores late reply", async (t) => {
   const controller = new AbortController();
   let sent = "",

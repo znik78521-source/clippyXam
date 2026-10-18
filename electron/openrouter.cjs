@@ -117,7 +117,9 @@ function createOpenRouter({ fetchImpl, timeoutMs = 17000 }) {
             e.message === "INVALID_KEY" ? "INVALID_KEY" : "INVALID_REQUEST",
         };
       }
-      if (active.has(input.id) || active.size >= 2) return { error: "BUSY" };
+      // StrictMode can overlap a cancelled startup catalogue fetch with its
+      // replacement. Leave room for those plus the owner's actual chat call.
+      if (active.has(input.id) || active.size >= 4) return { error: "BUSY" };
       const controller = new AbortController();
       active.set(input.id, controller);
       const timer = setTimeout(() => controller.abort("TIMEOUT"), timeoutMs);

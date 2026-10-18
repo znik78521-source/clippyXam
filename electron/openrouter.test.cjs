@@ -145,12 +145,16 @@ test("limits active operations, duplicate IDs, response size and permits retry a
         ),
       ),
   });
-  const a = t.request(chat()),
-    b = t.request(chat({ id: "chat-2" }));
+  const requests = [
+    t.request(chat()),
+    t.request(chat({ id: "chat-2" })),
+    t.request(chat({ id: "chat-3" })),
+    t.request(chat({ id: "chat-4" })),
+  ];
   assert.deepEqual(await t.request(chat()), { error: "BUSY" });
-  assert.deepEqual(await t.request(chat({ id: "chat-3" })), { error: "BUSY" });
+  assert.deepEqual(await t.request(chat({ id: "chat-5" })), { error: "BUSY" });
   t.dispose();
-  await Promise.all([a, b]);
+  await Promise.all(requests);
   const large = createOpenRouter({
     fetchImpl: async () => new Response("x".repeat(300000)),
   });

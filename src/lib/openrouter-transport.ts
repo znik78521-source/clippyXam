@@ -68,19 +68,35 @@ export async function openRouterFetch(
   });
   try {
     const headers = new Headers(init.headers);
-    const result = await Promise.race([
-      bridge.openRouterRequest({
-        id,
-        kind,
-        ...(kind === "chat"
-          ? {
-              key: headers.get("Authorization")?.replace(/^Bearer /, ""),
-              body: JSON.parse(String(init.body)),
-            }
-          : {}),
-      }),
-      cancellation,
-    ]);
+    const request: NativeRequest = {
+      id,
+      kind,
+      ...(kind === "chat"
+        ? {
+            key: headers.get("Authorization")?.replace(/^Bearer /, ""),
+            body: JSON.parse(String(init.body)),
+          }
+        : {}),
+    };
+    let result: NativeResult,
+      busyRetries = 0;
+    while (true) {
+      result = await Promise.race([
+        bridge.openRouterRequest(request),
+        cancellation,
+      ]);
+      signal?.throwIfAborted();
+      if (result.error !== "BUSY" || busyRetries >= 6) break;
+      // A catalogue refresh or a just-cancelled native request may briefly own
+      // both transport slots. Queue instead of dropping the user's chat message.
+      await Promise.race([
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(1000, 120 * 2 ** busyRetries)),
+        ),
+        cancellation,
+      ]);
+      busyRetries++;
+    }
     signal?.throwIfAborted();
     if (result.error) throw new TransportError(result.error);
     if (!result.status) throw new TransportError("NETWORK");

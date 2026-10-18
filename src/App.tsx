@@ -364,15 +364,21 @@ export default function App() {
         : incoming;
     clearTimers();
     lastReplyText.current = reply.text;
-    speak(reply.text, () => {
+    const playComic =
+      Boolean(comic) &&
+      character.id === "clippy" &&
+      settings.authoredClippy;
+    // A short authored gag must not wait for TTS initialization/playback: on a
+    // cold local voice that can take several seconds, longer than the scene.
+    if (playComic) {
       setBubble(reply.text);
-      if (comic && character.id === "clippy" && settings.authoredClippy)
-        setAnimation({
-          name: comic,
-          serial: ++animationSerial.current,
-          startedAt: Date.now(),
-        });
-    });
+      setAnimation({
+        name: comic!,
+        serial: ++animationSerial.current,
+        startedAt: Date.now(),
+      });
+    }
+    speak(reply.text, () => setBubble(reply.text));
     if (forgiven) setAway(0);
     if (
       reply.leaveSeconds > 0 &&

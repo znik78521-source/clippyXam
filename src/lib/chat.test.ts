@@ -169,6 +169,47 @@ test("only zero-cost routes are accepted and paid IDs fail before fetch", async 
   );
   assert.equal(fetchMock.mock.callCount(), 0);
 });
+test("additional routers use their fixed endpoint and never fall back across providers", async (t) => {
+  let calls = 0;
+  let requestedURL = "";
+  let sentBody: any;
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls++;
+    requestedURL = String(url);
+    sentBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: "Ну, говори." } }] }));
+  });
+  const base = {
+    key: "test",
+    character: characters[0],
+    intensity: "normal" as const,
+    history: [],
+    signal: new AbortController().signal,
+  };
+  await assert.rejects(
+    () => requestReply({ ...base, router: "teamorouter", model: "deepseek-v4-flash-free" }),
+    /тарифицируется/,
+  );
+  assert.equal(calls, 0);
+  await requestReply({
+    ...base,
+    router: "groq",
+    groqFreeTierAcknowledged: true,
+    model: "openai/gpt-oss-20b",
+  });
+  assert.equal(requestedURL, "https://api.groq.com/openai/v1/chat/completions");
+  assert.equal("provider" in sentBody, false);
+  assert.equal(calls, 1);
+  await requestReply({
+    ...base,
+    router: "teamorouter",
+    teamorouterPaidAcknowledged: true,
+    model: "deepseek-v4-flash-free",
+  });
+  assert.equal(requestedURL, "https://api.teamorouter.com/v1/chat/completions");
+  assert.equal("provider" in sentBody, false);
+  assert.equal(calls, 2);
+});
 test("never prints truncated JSON or hidden reasoning in the balloon", () => {
   assert.equal(
     parseReply('{"text":"Ты спросил, о чём мы говорили, так').text,

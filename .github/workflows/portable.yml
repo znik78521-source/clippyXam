@@ -89,15 +89,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = 'v0.10.1-portable'
+          $tag = 'v0.10.2-portable'
           $exe = (Get-ChildItem release/*-portable.exe).FullName
           $sha = (Get-ChildItem release/*.exe.sha256).FullName
           $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
           $notes = @"
           ## Portable для Windows 10/11 x64 — без установщика
 
-          В 0.10.1 исправлено мгновенное завершение отправки при временной занятости native-сетевого транспорта. Транспорт теперь оставляет слоты для чата во время обновления каталога и кратко повторяет `BUSY` с отменяемой задержкой, вместо того чтобы сразу терять попытку.
-          Скачайте **clippyXam-0.10.1-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+          В 0.10.2 добавлена поддержка Groq и TeamoRouter. OpenRouter `openrouter/free` остаётся стандартным маршрутом с нулевой ценой и без платного fallback. Groq — только при явном подтверждении и использовании Free tier: приложение не может проверить план или доступ каждой модели; на Developer tier ключ может тарифицироваться. TeamoRouter — отдельный pay-as-you-go провайдер и требует отдельного подтверждения; слово Free в имени модели не означает нулевую стоимость. Между роутерами нет автоматического fallback. Ключи хранятся раздельно.
+
+          CI не выполняет генерацию ответов с пользовательскими ключами и не гарантирует исправление всех сбоев отправки. Если сообщение исчезает без ответа, скопируйте Настройки → Подключение → «Диагностика подключения и голоса».
+
+          В 0.10.1 исправлено мгновенное завершение при краткой занятости native transport: чат ждёт слот и кратко повторяет `BUSY` с отменяемой задержкой.
+          Скачайте **clippyXam-0.10.2-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
 
           В 0.10 две новые сценки Скрепки: бутафорская кнопка «сноса винды» и ударное тестирование игрушечной битой с короткими нарисованными трещинами внутри сцены. Четыре новых рисунка, смена ключевых поз и локальная деформация, не готовые Agent-кадры и не полная покадровая перерисовка. Сценки не запускают shell, удаление файлов или системные операции.
 
@@ -136,7 +140,7 @@ jobs:
           $notes | Set-Content -Encoding utf8 release/release-notes.md
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
-          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.10.1 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.10.2 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
       - name: Report smoke failure diagnostics
         if: failure()

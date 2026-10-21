@@ -8,6 +8,7 @@ function sanitizeSettings(input) {
     character: ["clippy", "rover", "merlin"],
     intensity: ["soft", "normal", "wild"],
     ttsProvider: ["local", "system"],
+    router: ["openrouter", "groq", "teamorouter"],
   }))
     if (values.includes(input[key])) out[key] = input[key];
   for (const key of [
@@ -16,13 +17,20 @@ function sanitizeSettings(input) {
     "clickThrough",
     "speechMotion",
     "authoredClippy",
+    "teamorouterPaidAcknowledged",
+    "groqFreeTierAcknowledged",
   ])
     if (typeof input[key] === "boolean") out[key] = input[key];
+  const modelLists = {
+    openrouter: /^(?:openrouter\/free|[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free)$/,
+    groq: /^(?:openai\/gpt-oss-(?:20b|120b|safeguard-20b)|qwen\/qwen3\.8-27b)$/,
+    teamorouter: /^(?:deepseek-v4-flash-free)$/,
+  };
+  const router = out.router || "openrouter";
   if (
     typeof input.model === "string" &&
     input.model.length <= 160 &&
-    (input.model === "openrouter/free" ||
-      /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(input.model))
+    modelLists[router].test(input.model)
   )
     out.model = input.model;
   if (Number.isFinite(input.rate) && input.rate >= 0.7 && input.rate <= 1.8)

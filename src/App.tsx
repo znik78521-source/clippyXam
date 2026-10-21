@@ -30,6 +30,7 @@ import {
 
 import { useFreeModels } from "./lib/useFreeModels";
 import { useSpeech } from "./lib/useSpeech";
+import type { RouterId } from "./lib/routers";
 import {
   defaultPreferences,
   defaultVoiceMap,
@@ -69,6 +70,9 @@ export default function App() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useState<SettingsData>({
     character: "clippy",
+    router: "openrouter",
+    teamorouterPaidAcknowledged: false,
+    groqFreeTierAcknowledged: false,
     intensity: "wild",
     sound: localVoiceAvailable,
     widget: false,
@@ -86,6 +90,12 @@ export default function App() {
     cloudVoices: { ...defaultCloudVoices },
     companion: { ...defaultPreferences },
   });
+  const [routerKeys, setRouterKeys] = useState<Record<RouterId, string>>({
+    openrouter: "",
+    groq: "",
+    teamorouter: "",
+  });
+  const routerKeysRef = useRef(routerKeys);
   const [keyLoaded, setKeyLoaded] = useState(
     !window.clippyDesktop?.loadSavedKey,
   );
@@ -93,16 +103,24 @@ export default function App() {
     let active = true;
     const bridge = window.clippyDesktop;
     if (!bridge?.loadSavedKey) return;
-    void bridge
-      .loadSavedKey()
-      .then((result) => {
+    void Promise.all(
+      (["openrouter", "groq", "teamorouter"] as const).map(async (router) =>
+        [router, await bridge.loadSavedKey!(router)] as const,
+      ),
+    )
+      .then((entries) => {
         if (!active) return;
-        if (result.key)
-          setSettings((current) => ({ ...current, key: result.key }));
-        if (result.warning) setToast(result.warning);
+        const keys = { openrouter: "", groq: "", teamorouter: "" };
+        for (const [router, result] of entries) {
+          keys[router] = result.key;
+          if (result.warning) setToast(result.warning);
+        }
+        routerKeysRef.current = keys;
+        setRouterKeys(keys);
+        setSettings((current) => ({ ...current, key: keys[current.router] }));
       })
       .catch(() => {
-        if (active) setToast("Не удалось загрузить сохранённый ключ.");
+        if (active) setToast("Не удалось загрузить сохранённые ключи.");
       })
       .finally(() => {
         if (active) setKeyLoaded(true);
@@ -156,9 +174,19 @@ export default function App() {
       active = false;
     };
   }, []);
-  function persistKey(key: string) {
+  useEffect(() => {
+    if (!keyLoaded || !preferencesLoaded) return;
+    setSettings((current) => {
+      const key = routerKeys[current.router] || "";
+      return current.key === key ? current : { ...current, key };
+    });
+  }, [keyLoaded, preferencesLoaded, routerKeys]);
+  function persistKey(key: string, router: RouterId = settings.router) {
+    const next = { ...routerKeysRef.current, [router]: key };
+    routerKeysRef.current = next;
+    setRouterKeys(next);
     void window.clippyDesktop
-      ?.saveKey?.(key)
+      ?.saveKey?.(key, router)
       .catch((error) =>
         setToast(
           error instanceof Error ? error.message : "Ключ не удалось сохранить.",
@@ -549,7 +577,7 @@ export default function App() {
         current.filter((message) => message.id !== userMessageId),
       );
       if (cause instanceof ChatError && cause.status === 401) {
-        persistKey("");
+        persistKey("", settings.router);
         setSettings((current) => ({ ...current, key: "" }));
         setFloating(false);
         if (desktop.native) desktop.setCompanion(false);
@@ -558,7 +586,7 @@ export default function App() {
         controller.signal.aborted
           ? "Ответ задержался. Попробуй ещё раз."
           : cause instanceof TypeError
-            ? "Не удалось связаться с OpenRouter. Проверь интернет и доступность сервиса."
+            ? `Не удалось связаться с ${settings.router === "teamorouter" ? "TeamoRouter" : settings.router === "groq" ? "Groq" : "OpenRouter"}. Проверь интернет и доступность сервиса.`
             : cause instanceof Error
               ? cause.message
               : "Не удалось получить ответ.",
@@ -813,8 +841,11 @@ export default function App() {
 
   async function saveSettings(value: SettingsData) {
     await window.clippyDesktop?.saveSettings?.(publicSettings(value));
-    if (value.key !== settings.key)
-      await window.clippyDesktop?.saveKey?.(value.key);
+    if (value.key !== routerKeysRef.current[value.router])
+      await window.clippyDesktop?.saveKey?.(value.key, value.router);
+    const nextKeys = { ...routerKeysRef.current, [value.router]: value.key };
+    routerKeysRef.current = nextKeys;
+    setRouterKeys(nextKeys);
     cancelRequest();
     stopSpeech();
     clearTimers();
@@ -864,9 +895,10 @@ export default function App() {
       )}
       {keyLoaded && preferencesLoaded && !minimized && !settings.key.trim() ? (
         <TokenDialog
+          router={settings.router}
           onSave={(key) => {
             setSettings((current) => ({ ...current, key }));
-            persistKey(key);
+            persistKey(key, settings.router);
             setError("");
           }}
           onClose={closeWindow}
@@ -883,6 +915,7 @@ export default function App() {
             }}
             voices={voices}
             localVoiceState={voiceState}
+            routerKeys={routerKeys}
             modelCatalog={modelCatalog}
             diagnostic={[error, toast, voiceState?.error]
               .filter(Boolean)

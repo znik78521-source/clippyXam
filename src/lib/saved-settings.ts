@@ -3,6 +3,9 @@ export type SavedSettings = Partial<
   Pick<
     SettingsData,
     | "character"
+    | "router"
+    | "teamorouterPaidAcknowledged"
+    | "groqFreeTierAcknowledged"
     | "intensity"
     | "sound"
     | "model"
@@ -21,6 +24,9 @@ export type SavedSettings = Partial<
 export function publicSettings(s: SettingsData): SavedSettings {
   return {
     character: s.character,
+    router: s.router,
+    teamorouterPaidAcknowledged: s.teamorouterPaidAcknowledged,
+    groqFreeTierAcknowledged: s.groqFreeTierAcknowledged,
     intensity: s.intensity,
     sound: s.sound,
     model: s.model,

@@ -1,6 +1,10 @@
+import { ROUTER_ENDPOINTS, type RouterId } from "./routers";
 export interface NativeRequest {
   id: string;
   kind: "models" | "chat";
+  router?: RouterId;
+  paidOptIn?: boolean;
+  groqFreeTierAcknowledged?: boolean;
   key?: string;
   body?: unknown;
 }
@@ -10,7 +14,17 @@ export interface NativeResult {
   error?: string;
 }
 export class TransportError extends Error {
-  constructor(public code: string) {
+  constructor(public code: string, router: RouterId = "openrouter") {
+    const names: Record<RouterId, string> = {
+      openrouter: "OpenRouter",
+      groq: "Groq",
+      teamorouter: "TeamoRouter",
+    };
+    const hosts: Record<RouterId, string> = {
+      openrouter: "openrouter.ai",
+      groq: "api.groq.com",
+      teamorouter: "api.teamorouter.com",
+    };
     const descriptions: Record<string, string> = {
       DNS: "Не удалось найти openrouter.ai через DNS. Проверь DNS и доступность сервиса в своей сети.",
       TLS: "Не прошла проверка HTTPS-сертификата OpenRouter. Проверь дату Windows, прокси и HTTPS-фильтрацию антивируса; защиту не отключай.",
@@ -32,14 +46,20 @@ export class TransportError extends Error {
       BUSY: "Предыдущий сетевой запрос ещё завершается. Попробуй снова.",
       ABORTED: "Запрос отменён.",
     };
+    const description = Object.hasOwn(descriptions, code)
+      ? descriptions[code]
+      : descriptions.NETWORK;
     super(
-      `[${Object.hasOwn(descriptions, code) ? code : "NETWORK"}] ${Object.hasOwn(descriptions, code) ? descriptions[code] : descriptions.NETWORK}`,
+      `[${Object.hasOwn(descriptions, code) ? code : "NETWORK"}] ${description.replaceAll("OpenRouter", names[router]).replaceAll("openrouter.ai", hosts[router])}`,
     );
   }
 }
 export async function openRouterFetch(
   kind: "models" | "chat",
   init: RequestInit,
+  router: RouterId = "openrouter",
+  paidOptIn = false,
+  groqFreeTierAcknowledged = false,
 ): Promise<Pick<Response, "ok" | "status" | "json">> {
   const signal = init.signal;
   signal?.throwIfAborted();
@@ -48,12 +68,12 @@ export async function openRouterFetch(
   if (!bridge?.openRouterRequest || !bridge.openRouterCancel) {
     try {
       return await fetch(
-        `https://openrouter.ai/api/v1/${kind === "chat" ? "chat/completions" : "models"}`,
+        `${ROUTER_ENDPOINTS[router]}/${kind === "chat" ? "chat/completions" : "models"}`,
         init,
       );
     } catch (error) {
       signal?.throwIfAborted();
-      if (error instanceof TypeError) throw new TransportError("BROWSER");
+      if (error instanceof TypeError) throw new TransportError("BROWSER", router);
       throw error;
     }
   }
@@ -71,6 +91,9 @@ export async function openRouterFetch(
     const request: NativeRequest = {
       id,
       kind,
+      router,
+      paidOptIn,
+      groqFreeTierAcknowledged,
       ...(kind === "chat"
         ? {
             key: headers.get("Authorization")?.replace(/^Bearer /, ""),
@@ -98,8 +121,8 @@ export async function openRouterFetch(
       busyRetries++;
     }
     signal?.throwIfAborted();
-    if (result.error) throw new TransportError(result.error);
-    if (!result.status) throw new TransportError("NETWORK");
+    if (result.error) throw new TransportError(result.error, router);
+    if (!result.status) throw new TransportError("NETWORK", router);
     return {
       ok: result.status >= 200 && result.status < 300,
       status: result.status,
@@ -108,7 +131,7 @@ export async function openRouterFetch(
   } catch (error) {
     signal?.throwIfAborted();
     if (error instanceof TransportError) throw error;
-    throw new TransportError("NETWORK");
+throw new TransportError("NETWORK", router);
   } finally {
     signal?.removeEventListener("abort", aborted);
   }

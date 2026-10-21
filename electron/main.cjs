@@ -238,8 +238,9 @@ function installIPC() {
   handlers["preferences:save"] = (value) => userSettings.save(value);
   handlers["startup:get"] = () => startup.state();
   handlers["startup:set"] = (value) => startup.set(value);
-  handlers["key:load"] = () => keyVault.load();
-  handlers["key:save"] = (key) => keyVault.save(key);
+  handlers["key:load"] = (router) => keyVault.load(router);
+  handlers["key:save"] = (input) =>
+    keyVault.save(input?.key, input?.router);
   handlers["voice:state"] = () => localVoice.state();
   handlers["voice:prepare"] = () => localVoice.prepare();
   handlers["voice:stop"] = () => localVoice.stop(win.webContents);

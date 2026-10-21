@@ -1,7 +1,7 @@
 {
   "name": "clippyxam",
   "private": true,
-  "version": "0.10.1",
+  "version": "0.10.2",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -41,7 +41,7 @@
     "node": ">=22.12.0"
   },
   "main": "electron/main.cjs",
-  "description": "Minimal NT-style desktop companion with free-only OpenRouter chat",
+  "description": "Minimal NT-style desktop companion with OpenRouter Free and explicit additional LLM routers",
   "author": "clippyXam contributors",
   "build": {
     "appId": "ai.clippyxam",

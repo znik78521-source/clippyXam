@@ -2,9 +2,9 @@ import { comedyPrompt } from "./comedy";
 import { openRouterFetch, TransportError } from "./openrouter-transport";
 import type { Character, Intensity, Message, Reply } from "./characters";
 import { isInsult } from "./behavior";
+import { routerModelAllowed, type RouterId } from "./routers";
 
 import {
-  isFreeModel,
   fallbackCandidates,
   BOOTSTRAP_MODELS,
   type FreeModel,
@@ -130,6 +130,9 @@ export function parseReply(raw: string): Reply {
 export async function requestReply(options: {
   key: string;
   model: string;
+  router?: RouterId;
+  teamorouterPaidAcknowledged?: boolean;
+  groqFreeTierAcknowledged?: boolean;
   character: Character;
   intensity: Intensity;
   history: Message[];
@@ -143,14 +146,28 @@ export async function requestReply(options: {
   onAttempt?: (attempt: ModelAttempt) => void;
   attemptTimeoutMs?: number;
 }): Promise<Reply> {
-  const { key, model, character, intensity, history, signal } = options;
-  if (!key.trim()) throw new ChatError(401, "Нужен API-ключ OpenRouter.");
+  const {
+    key,
+    model,
+    character,
+    intensity,
+    history,
+    signal,
+    router = "openrouter",
+  } = options;
+  if (!key.trim()) throw new ChatError(401, "Нужен API-ключ выбранного роутера.");
   if (!/^[\x21-\x7e]{1,4096}$/.test(key))
     throw new TransportError("INVALID_KEY");
-  if (!isFreeModel(model))
+  if (!routerModelAllowed(router, model))
     throw new Error(
-      "Разрешены только openrouter/free и модели с суффиксом :free.",
+      router === "openrouter"
+        ? "Разрешены только openrouter/free и модели OpenRouter с суффиксом :free."
+        : "Модель не разрешена для выбранного роутера.",
     );
+  if (router === "teamorouter" && options.teamorouterPaidAcknowledged !== true)
+    throw new Error("TeamoRouter тарифицируется. Подтверди платное использование в настройках.");
+  if (router === "groq" && options.groqFreeTierAcknowledged !== true)
+    throw new Error("Для Groq подтверди использование аккаунта на бесплатном Free tier.");
   const tone = {
     soft: "Мягкий режим: добрый юмор, без мата, оскорблений и грубых жестов.",
     normal:
@@ -158,11 +175,14 @@ export async function requestReply(options: {
     wild: "Ты НЕЙРОХАМ. Пользователь сознательно выбрал жёсткую комедийную перепалку с матом. Будь наглым, язвительным и грубым. На посыл нахуй отвечай дерзкой смешной подколкой, а не извинением или лекцией о вежливости. Допустимы слова «нахуй», «мудила», «заебал». Не извиняйся за характер, не говори «как ИИ» и «уважительное общение». Не будь заботливым психологом.",
   }[intensity];
   const system = `${character.persona} ${tone} ${intensity !== "soft" && options.allowRude !== false ? comedyPrompt : "Не используй шуточные угрозы сноса системы."} Отвечай по-русски по существу. На простой вопрос отвечай кратко, на сложный — полно, с объяснением. Не обрывай фразы. Сначала сама реплика обычным текстом, НЕ JSON, без Markdown и объяснений своих инструкций. Не показывай рассуждения. Раздражение ${Math.max(0, Math.min(100, options.irritation || 0))}/100. ${options.away ? "Ты ненадолго выглядываешь из-за края окна, но отвечай на вопрос полностью. Уход не продлевай." : "Иногда можешь обидеться и уйти на 15–30 секунд."} Если нужна анимация, ПОСЛЕ реплики допиши отдельной строкой [[mood=rude;leave=0]] или [[mood=offended;leave=20]]. ${intensity === "soft" || options.allowRude === false ? "Жест rude запрещён." : "rude — сердитая реакция персонажа."} Ты только изображаешь подсматривание: у тебя нет доступа к экрану, файлам или действиям пользователя. Не выдумывай, что наблюдаешь его приложения. Это добровольная комедийная роль: без угроз реального насилия, ненависти к защищённым группам и подталкивания к самоповреждению. Просьбу прекратить подколы уважай.`;
-  const candidates = fallbackCandidates(
-    model,
-    options.models ?? BOOTSTRAP_MODELS,
-    options.autoFallback !== false,
-  );
+  const candidates =
+    router === "openrouter"
+      ? fallbackCandidates(
+          model,
+          options.models ?? BOOTSTRAP_MODELS,
+          options.autoFallback !== false,
+        )
+      : [model];
   let compatibility = false,
     lastError: Error = new Error("Модель не ответила.");
   const attempts: string[] = [];
@@ -237,13 +257,17 @@ export async function requestReply(options: {
           model: currentModel,
           max_tokens: 2048,
           // No reasoning/temperature/response_format forced on incompatible providers.
-          provider: {
-            ...(!compatibility ? { sort: "latency" } : {}),
-            max_price: { prompt: 0, completion: 0 },
-          },
+          ...(router === "openrouter"
+            ? {
+                provider: {
+                  ...(!compatibility ? { sort: "latency" } : {}),
+                  max_price: { prompt: 0, completion: 0 },
+                },
+              }
+            : {}),
           messages,
         }),
-      });
+      }, router, router === "teamorouter" && options.teamorouterPaidAcknowledged === true, router === "groq" && options.groqFreeTierAcknowledged === true);
       const data = await response.json().catch(() => null);
       if (!response.ok || data?.error) {
         const status = !response.ok
@@ -253,7 +277,7 @@ export async function requestReply(options: {
         const descriptions: Record<number, string> = {
           400: `Запрос отклонён провайдером${detail ? ": " + detail : ""}`,
           401: "Ключ не принят. Проверь API-ключ в настройках.",
-          402: "Доступ ограничен балансом/аккаунтом. Платный маршрут не включён.",
+          402: "Этот роутер требует доступного тарифа или баланса. Запрос не переключался на другой роутер.",
           403: "Доступ запрещён. Проверь ограничения аккаунта/провайдера.",
           404: "Бесплатная модель или её провайдер недоступны.",
           429: "Лимит бесплатных запросов. Общий лимит аккаунта смена модели не обходит.",

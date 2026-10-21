@@ -20,8 +20,8 @@ contextBridge.exposeInMainWorld(
     saveSettings: (value) => ipcRenderer.invoke("preferences:save", value),
     getStartup: () => ipcRenderer.invoke("startup:get"),
     setStartup: (value) => ipcRenderer.invoke("startup:set", value),
-    loadSavedKey: () => ipcRenderer.invoke("key:load"),
-    saveKey: (key) => ipcRenderer.invoke("key:save", key),
+    loadSavedKey: (router) => ipcRenderer.invoke("key:load", router),
+    saveKey: (key, router) => ipcRenderer.invoke("key:save", { key, router }),
     localVoiceState: () => ipcRenderer.invoke("voice:state"),
     prepareLocalVoice: () => ipcRenderer.invoke("voice:prepare"),
     synthesizeLocalVoice: (text, rate) =>

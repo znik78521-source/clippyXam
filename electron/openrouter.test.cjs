@@ -40,6 +40,43 @@ test("native request uses only fixed HTTPS endpoint, no cookies, no redirects, a
     data: { choices: [] },
   });
 });
+test("Groq and TeamoRouter use separate fixed endpoints, strict model lists, and explicit account opt-ins", async () => {
+  const urls = [];
+  const t = createOpenRouter({
+    fetchImpl: async (url, init) => {
+      urls.push(url);
+      assert.equal("provider" in JSON.parse(init.body), false);
+      return Response.json({ choices: [] });
+    },
+  });
+  const base = {
+    id: "provider-1",
+    kind: "chat",
+    key: "secret",
+    body: {
+      model: "openai/gpt-oss-20b",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: "Привет" }],
+    },
+  };
+  assert.deepEqual(await t.request({ ...base, router: "groq" }), { error: "INVALID_REQUEST" });
+  assert.equal(urls.length, 0);
+  assert.equal((await t.request({ ...base, router: "groq", groqFreeTierAcknowledged: true })).status, 200);
+  const teamo = {
+    ...base,
+    id: "provider-2",
+    router: "teamorouter",
+    body: { ...base.body, model: "deepseek-v4-flash-free" },
+  };
+  assert.deepEqual(await t.request(teamo), { error: "INVALID_REQUEST" });
+  assert.equal((await t.request({ ...teamo, paidOptIn: true })).status, 200);
+  assert.deepEqual(urls, [
+    "https://api.groq.com/openai/v1/chat/completions",
+    "https://api.teamorouter.com/v1/chat/completions",
+  ]);
+  assert.deepEqual(await t.request({ ...teamo, id: "provider-3", router: "arbitrary", paidOptIn: true }), { error: "INVALID_REQUEST" });
+  assert.equal(urls.length, 2);
+});
 test("public model list has no API-key header even if caller supplies key", async () => {
   const transport = createOpenRouter({
     fetchImpl: async (url, init) => {

@@ -5,11 +5,15 @@ import { authoredActions, authoredLabels } from "../lib/authored-clippy";
 import { originalActions } from "../lib/original-animations";
 import { characters } from "../lib/characters";
 import type { useFreeModels } from "../lib/useFreeModels";
-import { DEFAULT_MODEL, isFreeModel } from "../lib/chat";
+import { DEFAULT_MODEL } from "../lib/chat";
 import type { CharacterId, Intensity } from "../lib/characters";
 import type { CompanionPreferences } from "../lib/preferences";
+import { ROUTERS, ROUTER_MODELS, routerModelAllowed, type RouterId } from "../lib/routers";
 export interface SettingsData {
   character: CharacterId;
+  router: RouterId;
+  teamorouterPaidAcknowledged: boolean;
+  groqFreeTierAcknowledged: boolean;
   intensity: Intensity;
   sound: boolean;
   widget: boolean;
@@ -34,6 +38,7 @@ export default function Settings({
   onClose,
   modelCatalog,
   localVoiceState,
+  routerKeys,
   onPreview,
   diagnostic,
 }: {
@@ -41,6 +46,7 @@ export default function Settings({
   modelCatalog: ReturnType<typeof useFreeModels>;
   voices: SpeechSynthesisVoice[];
   localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
+  routerKeys: Record<RouterId, string>;
   onPreview?: (name: string) => void;
   diagnostic?: string;
   onSave: (data: SettingsData) => void | Promise<void>;
@@ -58,6 +64,15 @@ export default function Settings({
     [saved, setSaved] = useState(true);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const routeModels =
+    draft.router === "openrouter"
+      ? modelCatalog.models
+      : ROUTER_MODELS[draft.router];
+  const routeKeyInfo = {
+    openrouter: { placeholder: "sk-or-v1-…", name: "OpenRouter", url: "https://openrouter.ai/keys" },
+    groq: { placeholder: "gsk_…", name: "Groq", url: "https://console.groq.com/keys" },
+    teamorouter: { placeholder: "tr-…", name: "TeamoRouter", url: "https://teamorouter.com/dashboard?tab=api-keys" },
+  }[draft.router];
   const saveRef = useRef(onSave);
   saveRef.current = onSave;
   const lastSaved = useRef(JSON.stringify(settings)),
@@ -69,12 +84,18 @@ export default function Settings({
     const task = chain.current.then(async () => {
       if (stamp === lastSaved.current) return true;
       if (
-        !isFreeModel(value.model.trim()) ||
+        !routerModelAllowed(value.router, value.model.trim()) ||
+        (value.router === "teamorouter" && !value.teamorouterPaidAcknowledged) ||
+        (value.router === "groq" && !value.groqFreeTierAcknowledged) ||
         (value.ttsProvider === "openai" && !value.ttsKey.trim())
       ) {
         if (active.current)
           setValidation(
-            "Укажи бесплатную модель и, для платного TTS, отдельный ключ.",
+            value.router === "teamorouter"
+              ? "TeamoRouter тарифицируется: прочитай предупреждение и явно подтверди использование."
+              : value.router === "groq"
+                ? "Для Groq подтверди, что аккаунт останется на бесплатном Free tier."
+                : "Укажи бесплатную модель и, для платного TTS, отдельный ключ.",
           );
         return false;
       }
@@ -328,8 +349,69 @@ export default function Settings({
             автозапуск из новой папки. Удаляя приложение, сначала выключи его
             здесь.
           </p>
+          <label className="field-label" htmlFor="router">
+            AI-роутер
+          </label>
+          <select
+            id="router"
+            value={draft.router}
+            onChange={(event) => {
+              const router = event.target.value as RouterId;
+              const model = router === "openrouter" ? DEFAULT_MODEL : ROUTER_MODELS[router][0].id;
+              setDraft({
+                ...draft,
+                router,
+                key: routerKeys[router] || "",
+                model,
+                autoFallback: router === "openrouter" && draft.autoFallback,
+              });
+            }}
+          >
+            {ROUTERS.map((router) => (
+              <option key={router.id} value={router.id}>{router.name}</option>
+            ))}
+          </select>
+          {draft.router === "teamorouter" && (
+            <>
+              <p className="field-help" role="alert">
+                TeamoRouter — pay-as-you-go, не бесплатный провайдер. Модель с
+                «Free» в названии тоже может тарифицироваться; проверь актуальный
+                тариф перед использованием. Автопереключения на него нет.
+              </p>
+              <label className="behavior-option">
+                <input
+                  type="checkbox"
+                  checked={draft.teamorouterPaidAcknowledged}
+                  onChange={(event) => setDraft({ ...draft, teamorouterPaidAcknowledged: event.target.checked })}
+                />
+                Понимаю, что запросы TeamoRouter могут списывать средства
+              </label>
+              <p className="field-help">
+                Документация и тарифы: <a href="https://teamorouter.com/pricing" target="_blank" rel="noreferrer">teamorouter.com ↗</a>. Запросы не повторяются в других роутерах.
+              </p>
+            </>
+          )}
+          {draft.router === "groq" && (
+            <>
+              <p className="field-help">
+                Используй только аккаунт Groq на Free tier. Если перевести его
+                на платный Developer tier, тот же API-ключ может тарифицироваться;
+                приложение не умеет определять тариф аккаунта и не гарантирует,
+                что каждая модель разрешена на каждом Free-аккаунте. Проверь
+                доступность в <a href="https://console.groq.com/docs/models" target="_blank" rel="noreferrer">каталоге моделей Groq ↗</a>; автоматического перехода на другую модель/роутер нет.
+              </p>
+              <label className="behavior-option">
+                <input
+                  type="checkbox"
+                  checked={draft.groqFreeTierAcknowledged}
+                  onChange={(event) => setDraft({ ...draft, groqFreeTierAcknowledged: event.target.checked })}
+                />
+                Подтверждаю, что использую бесплатный Free tier Groq
+              </label>
+            </>
+          )}
           <label className="field-label" htmlFor="api-key">
-            API-ключ OpenRouter
+            API-ключ {routeKeyInfo.name}
           </label>
           <div className="password-field">
             <input
@@ -337,111 +419,71 @@ export default function Settings({
               type={showKey ? "text" : "password"}
               autoComplete="off"
               spellCheck={false}
-              placeholder="sk-or-v1-…"
+              placeholder={routeKeyInfo.placeholder}
               value={draft.key}
-              onChange={(event) =>
-                setDraft({ ...draft, key: event.target.value })
-              }
+              onChange={(event) => setDraft({ ...draft, key: event.target.value })}
             />
-            <button
-              type="button"
-              aria-label={showKey ? "Скрыть ключ" : "Показать ключ"}
-              onClick={() => setShowKey(!showKey)}
-            >
+            <button type="button" aria-label={showKey ? "Скрыть ключ" : "Показать ключ"} onClick={() => setShowKey(!showKey)}>
               {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
           <div className="field-help">
-            Получить ключ можно на{" "}
-            <a
-              href="https://openrouter.ai/keys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              openrouter.ai ↗
-            </a>
+            Создать ключ: <a href={routeKeyInfo.url} target="_blank" rel="noreferrer">{routeKeyInfo.name} ↗</a>
           </div>
           <button type="button" onClick={() => setDraft({ ...draft, key: "" })}>
-            Удалить сохранённый ключ
+            Удалить сохранённый ключ {routeKeyInfo.name}
           </button>
           <p className="field-help">
-            В Windows ключ сохраняется зашифрованным, привязан к твоей учётной
-            записи. После переноса portable на другой компьютер может
-            понадобиться повторный ввод. Новый ключ каждый раз создавать не
-            нужно.
+            В Windows ключи каждого роутера сохраняются отдельно и шифруются
+            DPAPI. При переносе portable на другой компьютер ключ может
+            потребовать повторного ввода.
           </p>
           <label className="field-label" htmlFor="model">
-            Бесплатная модель
+            Модель {draft.router === "teamorouter" ? "(тарификация по тарифу)" : ""}
           </label>
-          <select
-            id="model"
-            value={draft.model}
-            onChange={(event) =>
-              setDraft({ ...draft, model: event.target.value })
-            }
-          >
-            <option value={DEFAULT_MODEL}>
-              OpenRouter Free — стандартный бесплатный маршрут
-            </option>
-            {!modelCatalog.models.some((m) => m.id === draft.model) &&
-              draft.model !== DEFAULT_MODEL && (
-                <option value={draft.model}>
-                  {draft.model} — нет в текущем каталоге
-                </option>
-              )}
-            <optgroup label="Компактные — приоритет скорости">
-              {modelCatalog.models
-                .filter((m) => m.group === "fast")
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="Другие бесплатные — резерв">
-              {modelCatalog.models
-                .filter((m) => m.group === "reserve")
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </optgroup>
+          <select id="model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>
+            {draft.router === "openrouter" && <option value={DEFAULT_MODEL}>OpenRouter Free — стандартный бесплатный маршрут</option>}
+            {draft.router === "openrouter" && !modelCatalog.models.some((m) => m.id === draft.model) && draft.model !== DEFAULT_MODEL && <option value={draft.model}>{draft.model} — нет в текущем каталоге</option>}
+            {draft.router === "openrouter" ? (
+              <>
+                <optgroup label="Компактные — приоритет скорости">
+                  {routeModels.filter((m) => m.group === "fast" ).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </optgroup>
+                <optgroup label="Другие бесплатные — резерв">
+                  {routeModels.filter((m) => m.group === "reserve").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </optgroup>
+              </>
+            ) : (
+              <optgroup label={draft.router === "groq" ? "Модели Groq (проверь Free tier)" : "Модели TeamoRouter (могут быть платными)"}>
+                {routeModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </optgroup>
+            )}
           </select>
-          <button
-            type="button"
-            disabled={modelCatalog.loading}
-            onClick={() => void modelCatalog.refresh()}
-          >
-            {modelCatalog.loading
-              ? "Обновляю список…"
-              : "Обновить список моделей"}
-          </button>
-          <p className="field-help" role="status">
-            {modelCatalog.error ||
-              (modelCatalog.live
-                ? `Бесплатных текстовых моделей в каталоге: ${modelCatalog.models.length}.`
-                : "Встроенный список до обновления каталога.")}{" "}
-            Компактность — ориентир, не замер скорости. Доступность и очереди
-            меняются.
-          </p>
-          <label className="behavior-option">
-            <input
-              type="checkbox"
-              checked={draft.autoFallback}
-              onChange={(event) =>
-                setDraft({ ...draft, autoFallback: event.target.checked })
-              }
-            />
-            Если не отвечает — пробовать другую бесплатную модель
-          </label>
-          <p className="field-help">
-            До четырёх разных моделей, до 15 секунд на каждую. При HTTP 400
-            следующая получает упрощённый совместимый запрос. Ключ/аккаунт
-            (401/402/403) не перебираются. Каждый запрос расходует бесплатный
-            лимит; платного fallback нет. Текст может попасть к нескольким
-            провайдерам с разными правилами хранения.
-          </p>
+          {draft.router === "openrouter" ? (
+            <>
+              <button type="button" disabled={modelCatalog.loading} onClick={() => void modelCatalog.refresh()}>
+                {modelCatalog.loading ? "Обновляю список…" : "Обновить список моделей OpenRouter"}
+              </button>
+              <p className="field-help" role="status">
+                {modelCatalog.error || (modelCatalog.live ? `Бесплатных текстовых моделей в каталоге: ${modelCatalog.models.length}.` : "Встроенный список до обновления каталога.")}{" "}
+                Компактность — ориентир, не замер скорости. Доступность и очереди меняются.
+              </p>
+              <label className="behavior-option">
+                <input type="checkbox" checked={draft.autoFallback} onChange={(event) => setDraft({ ...draft, autoFallback: event.target.checked })} />
+                Если не отвечает — пробовать другую бесплатную модель OpenRouter
+              </label>
+              <p className="field-help">
+                До четырёх нулевых по цене моделей OpenRouter. Никакой другой
+                роутер не используется автоматически; ключи и платные маршруты
+                между провайдерами не переключаются.
+              </p>
+            </>
+          ) : (
+            <p className="field-help">
+              Автопереключение отключено: запрос останется только у выбранного
+              провайдера. При отказе или лимите исходный текст сохраняется.
+            </p>
+          )}
         </fieldset>
         <fieldset
           id="settings-panel-voice"

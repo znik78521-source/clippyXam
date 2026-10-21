@@ -6,11 +6,20 @@ function createKeyVault({
   safeStorage,
   platform = process.platform,
 }) {
-  const file = path.join(directory, "openrouter-key.bin");
+  const files = {
+    openrouter: path.join(directory, "openrouter-key.bin"),
+    groq: path.join(directory, "groq-key.bin"),
+    teamorouter: path.join(directory, "teamorouter-key.bin"),
+  };
+  const getFile = (router = "openrouter") => {
+    if (!Object.hasOwn(files, router)) throw new Error("Unknown key provider");
+    return files[router];
+  };
   let queue = Promise.resolve();
   const available = () =>
     platform === "win32" && safeStorage.isEncryptionAvailable();
-  async function load() {
+  async function load(router = "openrouter") {
+    const file = getFile(router);
     await queue.catch(() => {});
     try {
       if (!available())
@@ -35,7 +44,8 @@ function createKeyVault({
       };
     }
   }
-  function save(key) {
+  function save(key, router = "openrouter") {
+    const file = getFile(router);
     if (typeof key !== "string" || key.length > 512)
       return Promise.reject(new Error("Некорректный ключ."));
     const task = queue

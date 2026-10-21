@@ -1,9 +1,17 @@
-// Fixed-purpose, owner-only transport. No arbitrary URLs, paid routes, disk logs or TLS bypass.
+// Fixed-purpose, owner-only provider transport. No arbitrary URLs or TLS bypass.
 const { isTrustedFrame } = require("./window-policy.cjs");
-const ENDPOINTS = {
-  models: "https://openrouter.ai/api/v1/models",
-  chat: "https://openrouter.ai/api/v1/chat/completions",
+const ROUTERS = {
+  openrouter: "https://openrouter.ai/api/v1",
+  groq: "https://api.groq.com/openai/v1",
+  teamorouter: "https://api.teamorouter.com/v1",
 };
+const GROQ_MODELS = new Set([
+  "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
+  "openai/gpt-oss-safeguard-20b",
+  "qwen/qwen3.8-27b",
+]);
+const TEAMOROUTER_MODELS = new Set(["deepseek-v4-flash-free"]);
 function codeFor(error) {
   const code = String(error?.code || "") + " " + String(error?.message || "");
   if (/ERR_NAME_NOT_RESOLVED|ENOTFOUND|EAI_AGAIN/.test(code)) return "DNS";
@@ -20,8 +28,12 @@ function validate(input) {
     !/^[a-zA-Z0-9-]{1,80}$/.test(input.id)
   )
     throw new Error("INVALID_REQUEST");
-  if (input.kind === "models")
-    return { url: ENDPOINTS.models, init: { method: "GET" } };
+  const router = input.router || "openrouter";
+  if (!Object.hasOwn(ROUTERS, router)) throw new Error("INVALID_REQUEST");
+  if (input.kind === "models") {
+    if (router !== "openrouter") throw new Error("INVALID_REQUEST");
+    return { url: `${ROUTERS.openrouter}/models`, init: { method: "GET" } };
+  }
   if (input.kind !== "chat") throw new Error("INVALID_REQUEST");
   if (typeof input.key !== "string" || !/^[\x21-\x7e]{1,4096}$/.test(input.key))
     throw new Error("INVALID_KEY");
@@ -30,24 +42,31 @@ function validate(input) {
     !b ||
     typeof b.model !== "string" ||
     b.model.length > 160 ||
-    !(
-      b.model === "openrouter/free" ||
-      /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(b.model)
-    )
-  )
-    throw new Error("INVALID_REQUEST");
-  if (
-    b.provider?.max_price?.prompt !== 0 ||
-    b.provider?.max_price?.completion !== 0 ||
-    ![400, 2048].includes(b.max_tokens)
-  )
-    throw new Error("INVALID_REQUEST");
-  if (
+    ![400, 2048].includes(b.max_tokens) ||
     !Array.isArray(b.messages) ||
     !b.messages.length ||
     b.messages.length > 21
   )
     throw new Error("INVALID_REQUEST");
+
+  if (router === "openrouter") {
+    if (
+      !(b.model === "openrouter/free" || /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_./-]+:free$/.test(b.model)) ||
+      b.provider?.max_price?.prompt !== 0 ||
+      b.provider?.max_price?.completion !== 0
+    )
+      throw new Error("INVALID_REQUEST");
+  } else if (router === "groq") {
+    if (!input.groqFreeTierAcknowledged || !GROQ_MODELS.has(b.model) || b.provider)
+      throw new Error("INVALID_REQUEST");
+  } else if (
+    !input.paidOptIn ||
+    !TEAMOROUTER_MODELS.has(b.model) ||
+    b.provider
+  ) {
+    throw new Error("INVALID_REQUEST");
+  }
+
   const messages = b.messages.map((m) => {
     if (
       !m ||
@@ -62,20 +81,24 @@ function validate(input) {
     model: b.model,
     max_tokens: b.max_tokens,
     messages,
-    provider: {
-      ...(b.provider.sort === "latency" ? { sort: "latency" } : {}),
-      max_price: { prompt: 0, completion: 0 },
-    },
+    ...(router === "openrouter"
+      ? {
+          provider: {
+            ...(b.provider.sort === "latency" ? { sort: "latency" } : {}),
+            max_price: { prompt: 0, completion: 0 },
+          },
+        }
+      : {}),
   });
   if (Buffer.byteLength(body) > 256 * 1024) throw new Error("INVALID_REQUEST");
   return {
-    url: ENDPOINTS.chat,
+    url: `${ROUTERS[router]}/chat/completions`,
     init: {
       method: "POST",
       headers: {
         Authorization: `Bearer ${input.key}`,
         "Content-Type": "application/json",
-        "X-Title": "clippyXam",
+        ...(router === "openrouter" ? { "X-Title": "clippyXam" } : {}),
       },
       body,
     },
@@ -117,8 +140,6 @@ function createOpenRouter({ fetchImpl, timeoutMs = 17000 }) {
             e.message === "INVALID_KEY" ? "INVALID_KEY" : "INVALID_REQUEST",
         };
       }
-      // StrictMode can overlap a cancelled startup catalogue fetch with its
-      // replacement. Leave room for those plus the owner's actual chat call.
       if (active.has(input.id) || active.size >= 4) return { error: "BUSY" };
       const controller = new AbortController();
       active.set(input.id, controller);
@@ -163,7 +184,7 @@ function installOpenRouterIPC({ ipcMain, getOwner, getURL, transport }) {
   function trusted(event) {
     const owner = getOwner();
     if (!owner || !isTrustedFrame(event, owner, getURL()))
-      throw new Error("Untrusted OpenRouter command");
+      throw new Error("Untrusted provider command");
   }
   ipcMain.handle("openrouter:request", (event, input) => {
     trusted(event);

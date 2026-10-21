@@ -29,6 +29,28 @@ test("key persistence round trip delegates encryption and deletion removes the f
   await f.vault.save("");
   assert.equal((await f.vault.load()).key, "");
 });
+test("each provider key is encrypted in its own file and cannot overwrite another provider", async (t) => {
+  const f = await fixture(t);
+  await Promise.all([
+    f.vault.save("or-secret", "openrouter"),
+    f.vault.save("groq-secret", "groq"),
+    f.vault.save("teamo-secret", "teamorouter"),
+  ]);
+  assert.deepEqual(
+    [
+      (await f.vault.load("openrouter")).key,
+      (await f.vault.load("groq")).key,
+      (await f.vault.load("teamorouter")).key,
+    ],
+    ["or-secret", "groq-secret", "teamo-secret"],
+  );
+  assert.deepEqual((await fs.readdir(f.directory)).sort(), [
+    "groq-key.bin",
+    "openrouter-key.bin",
+    "teamorouter-key.bin",
+  ]);
+  assert.throws(() => f.vault.save("x", "unknown"), /Unknown/);
+});
 test("unavailable encryption never falls back to plaintext", async (t) => {
   const f = await fixture(t, false);
   await assert.rejects(() => f.vault.save("test-secret"), /недоступно/);

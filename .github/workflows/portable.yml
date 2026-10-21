@@ -22,7 +22,17 @@ jobs:
       - run: npm ci
       - run: npm run verify
       - run: npx playwright install chromium
-      - run: npm run test:e2e -- --workers=2
+      - name: Run browser tests
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          npm run test:e2e -- --workers=2 2>&1 | Tee-Object -FilePath release/e2e.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/e2e.log -Tail 100) -join "%0A")
+            Write-Output "::error title=Browser e2e failure::$detail"
+            exit 1
+          }
       - run: npm run portable:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -157,6 +167,7 @@ jobs:
           path: |
             release/*.png
             release/*smoke.log
+            release/e2e.log
             release/russian-voice-test.wav
             test-results/
           if-no-files-found: ignore

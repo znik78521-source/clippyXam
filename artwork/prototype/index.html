@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Скрепка — проба инерции</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #acacac;
+        color: #252525;
+        font:
+          14px/1.5 Tahoma,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: 1080px;
+        margin: 32px auto;
+        padding: 0 24px;
+      }
+      h1 {
+        font-size: 24px;
+        margin: 0 0 7px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0 0 18px;
+        max-width: 770px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      button {
+        font: inherit;
+        background: #c0c0c0;
+        border: 2px solid;
+        border-color: #fff #555 #555 #fff;
+        padding: 6px 12px;
+        color: #181818;
+        cursor: pointer;
+      }
+      button:active {
+        border-color: #555 #fff #fff #555;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #333;
+        outline-offset: 3px;
+      }
+      .arena {
+        height: 510px;
+        position: relative;
+        background: #b5b5b5;
+        border: 1px solid #939393;
+        overflow: hidden;
+      }
+      .window {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 360px;
+        max-width: calc(100% - 16px);
+        background: #c0c0c0;
+        border: 3px solid;
+        border-color: #f0f0f0 #585858 #585858 #f0f0f0;
+        box-shadow: 3px 4px 0 #858585;
+        will-change: transform;
+      }
+      .caption {
+        height: 29px;
+        background: #a5a5a5;
+        border-bottom: 1px solid #777;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px;
+        font-size: 12px;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+      }
+      .caption:active {
+        cursor: grabbing;
+      }
+      .caption span:last-child {
+        border: 1px outset #eee;
+        background: #c0c0c0;
+        padding: 0 5px;
+        font-size: 11px;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #c0c0c0;
+      }
+      .input-row {
+        padding: 9px;
+        border-top: 1px solid #999;
+      }
+      input {
+        width: 100%;
+        padding: 7px;
+        background: #ffffed;
+        border: 2px inset #ddd;
+        font:
+          13px Tahoma,
+          Arial,
+          sans-serif;
+      }
+      .bottom {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 13px;
+        font-size: 12px;
+        color: #444;
+      }
+      .note {
+        font-size: 12px;
+        color: #444;
+        margin-top: 14px;
+      }
+      #state {
+        font-weight: bold;
+      }
+      #metrics {
+        font-variant-numeric: tabular-nums;
+      }
+      .hint {
+        position: absolute;
+        bottom: 12px;
+        left: 14px;
+        font-size: 11px;
+        color: #555;
+        pointer-events: none;
+      }
+      @media (max-width: 600px) {
+        main {
+          margin: 20px auto;
+          padding: 0 10px;
+        }
+        h1 {
+          font-size: 20px;
+        }
+        .arena {
+          height: 465px;
+        }
+        .bottom {
+          display: block;
+        }
+        .toolbar button {
+          font-size: 12px;
+          padding: 6px 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Скрепка не знает, что окно поехало.</h1>
+      <p>
+        Потяни серый заголовок. Плавное движение — слабый наклон. Рывок —
+        инерция в обратную сторону. Очень резкий рывок — удар о край и отскок.
+      </p>
+      <div class="toolbar">
+        <button data-scenario="gentle">Плавно вправо</button
+        ><button data-scenario="medium">Быстрее — наклон</button>
+        <button data-scenario="brake">Разгон → торможение</button
+        ><button data-scenario="jerk">Резкий рывок → удар</button
+        ><button id="reset">Сбросить</button>
+      </div>
+      <div class="arena" id="arena">
+        <section class="window" id="window">
+          <div class="caption" id="handle">
+            <span>clippyXam · тяни за заголовок</span><span>ПРОБА</span>
+          </div>
+          <canvas
+            id="actor"
+            width="352"
+            height="306"
+            aria-label="Новая Скрепка с инерцией"
+          ></canvas>
+          <div class="input-row">
+            <input
+              aria-label="Проверить тряску при печати"
+              placeholder="Печатай здесь — тряска прежняя"
+            />
+          </div>
+        </section>
+        <span class="hint"
+          >Без сети, ключа и звука. Это отдельная проба движения, не обновление
+          EXE.</span
+        >
+      </div>
+      <div class="bottom">
+        <span id="state" role="status">Покой</span><span id="metrics"></span>
+      </div>
+      <p class="note">
+        Новый рисунок и новая поза удара. Физика зависит от изменения скорости
+        окна, не от одного направления. Рисовка пока пробная; оригинальные
+        Agent-кадры здесь не используются.
+      </p>
+    </main>
+    <script type="module" src="./inertia-demo.ts"></script>
+  </body>
+</html>

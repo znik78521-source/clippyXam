@@ -1,0 +1,440 @@
+import { speechChunks } from "./speech-chunks";
+import { waveEnvelope, envelopeAt } from "./wave-envelope";
+import type { CharacterId } from "./characters";
+import { wordRange } from "./speech-progress";
+import type { SpeechProgress } from "./speech-progress";
+export interface VoiceOptions {
+  provider: "system" | "openai" | "local";
+  key: string;
+  voice: string;
+  rate: number;
+  character: CharacterId;
+}
+export type VoiceDriver = (
+  text: string,
+  options: VoiceOptions,
+  signal: AbortSignal,
+  started: () => void,
+  boundary?: (index: number, length?: number) => void,
+  level?: (value: number | null) => void,
+) => Promise<void>;
+export class SpeechQueue {
+  private queue: { text: string; options: VoiceOptions; ready?: () => void }[] =
+    [];
+  private controller: AbortController | null = null;
+  private generation = 0;
+  private reveal: (() => void) | null = null;
+  constructor(
+    private driver: VoiceDriver,
+    private activity: (busy: boolean, speaking: boolean) => void,
+    private error: (message: string) => void,
+    private progress: (value: SpeechProgress | null) => void = () => {},
+    private level: (value: number | null) => void = () => {},
+  ) {}
+  enqueue(text: string, options: VoiceOptions, ready?: () => void) {
+    if (!text.trim()) return;
+    if (this.queue.length >= 3) {
+      this.error("В очереди уже три реплики. Подожди или останови озвучку.");
+      return;
+    }
+    this.queue.push({
+      text: text.trim().slice(0, 12000),
+      options: { ...options },
+      ready,
+    });
+    if (!this.controller) void this.next();
+  }
+  stop(reveal = true) {
+    if (reveal) this.reveal?.();
+    this.reveal = null;
+    this.generation++;
+    this.queue = [];
+    this.controller?.abort();
+    this.controller = null;
+    this.activity(false, false);
+    this.progress(null);
+    this.level(null);
+  }
+  private async next() {
+    const job = this.queue.shift();
+    if (!job) {
+      this.activity(false, false);
+      return;
+    }
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.controller = controller;
+    this.activity(true, false);
+    this.progress(null);
+    this.level(null);
+    let presented = false;
+    const present = () => {
+      if (
+        !presented &&
+        generation === this.generation &&
+        !controller.signal.aborted
+      ) {
+        presented = true;
+        job.ready?.();
+      }
+    };
+    this.reveal = present;
+    const presentationDeadline = setTimeout(present, 4000);
+    // Bound both network wait and OS voices that never report completion.
+    const watchdog = setTimeout(
+      () => controller.abort("timeout"),
+      Math.min(900000, Math.max(120000, job.text.length * 90)),
+    );
+    let onAbort = () => {};
+    try {
+      const aborted = new Promise<void>((resolve) => {
+        onAbort = () => resolve();
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+      });
+      await Promise.race([
+        aborted,
+        this.driver(
+          job.text,
+          job.options,
+          controller.signal,
+          () => {
+            if (generation === this.generation && !controller.signal.aborted) {
+              present();
+              this.activity(true, true);
+            }
+          },
+          (index, length) => {
+            if (generation !== this.generation || controller.signal.aborted)
+              return;
+            const range = wordRange(job.text, index, length);
+            if (range) this.progress({ text: job.text, ...range });
+          },
+          (value) => {
+            if (generation === this.generation && !controller.signal.aborted)
+              this.level(value);
+          },
+        ),
+      ]);
+      if (controller.signal.reason === "timeout")
+        this.error("Озвучка превысила время ожидания.");
+    } catch (error) {
+      if (generation === this.generation && !controller.signal.aborted)
+        this.error(
+          error instanceof Error
+            ? error.message
+            : "Не удалось озвучить реплику.",
+        );
+      else if (
+        generation === this.generation &&
+        controller.signal.reason === "timeout"
+      )
+        this.error("Озвучка превысила время ожидания.");
+    } finally {
+      clearTimeout(watchdog);
+      clearTimeout(presentationDeadline);
+      present();
+      controller.signal.removeEventListener("abort", onAbort);
+      if (generation === this.generation) {
+        this.controller = null;
+        this.reveal = null;
+        this.progress(null);
+        this.level(null);
+        void this.next();
+      }
+    }
+  }
+}
+export class AudioCache {
+  private items = new Map<string, Blob>();
+  private bytes = 0;
+  constructor(
+    private maxItems = 20,
+    private maxBytes = 20 * 1024 * 1024,
+  ) {}
+  get(key: string) {
+    const item = this.items.get(key);
+    if (item) {
+      this.items.delete(key);
+      this.items.set(key, item);
+    }
+    return item;
+  }
+  put(key: string, blob: Blob) {
+    if (blob.size > this.maxBytes) return;
+    const old = this.items.get(key);
+    if (old) {
+      this.bytes -= old.size;
+      this.items.delete(key);
+    }
+    this.items.set(key, blob);
+    this.bytes += blob.size;
+    while (this.items.size > this.maxItems || this.bytes > this.maxBytes) {
+      const oldest = this.items.keys().next().value!;
+      this.bytes -= this.items.get(oldest)!.size;
+      this.items.delete(oldest);
+    }
+  }
+  clear() {
+    this.items.clear();
+    this.bytes = 0;
+  }
+  get size() {
+    return this.items.size;
+  }
+}
+export async function fetchVoiceAudio(
+  text: string,
+  options: VoiceOptions,
+  signal: AbortSignal,
+): Promise<Blob> {
+  if (!options.key.trim())
+    throw new Error("Для OpenAI TTS нужен отдельный ключ в настройках голоса.");
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.key}`,
+    },
+    body: JSON.stringify({
+      model: "tts-1",
+      voice: options.voice,
+      input: text.slice(0, 2500),
+      speed: options.rate,
+      response_format: "mp3",
+    }),
+  });
+  if (!response.ok) {
+    const errors: Record<number, string> = {
+      401: "OpenAI TTS: ключ не принят.",
+      429: "OpenAI TTS: лимит запросов или средств.",
+      403: "OpenAI TTS: доступ ограничен.",
+    };
+    throw new Error(
+      errors[response.status] ||
+        `Ошибка озвучки OpenAI (HTTP ${response.status}).`,
+    );
+  }
+  if (!response.headers.get("content-type")?.startsWith("audio/"))
+    throw new Error("Провайдер вернул не аудио.");
+  if (Number(response.headers.get("content-length")) > 5 * 1024 * 1024)
+    throw new Error("Слишком большой аудиоответ.");
+  const blob = await response.blob();
+  if (!blob.size || blob.size > 5 * 1024 * 1024)
+    throw new Error("Некорректный размер аудиоответа.");
+  return blob;
+}
+export function createBrowserVoiceDriver(cache: AudioCache): VoiceDriver {
+  let cloudRequests = 0;
+  return async (text, options, signal, started, boundary, level) => {
+    if (signal.aborted) return;
+    if (options.provider === "system") {
+      if (!("speechSynthesis" in window))
+        throw new Error("Системная озвучка недоступна в этом браузере.");
+      const voices = window.speechSynthesis.getVoices();
+      const voice =
+        voices.find((v) => v.voiceURI === options.voice) ||
+        voices.find((v) => v.lang.toLowerCase().startsWith("ru"));
+      if (!voice)
+        throw new Error(
+          "Русский голос не найден. Установи его в ОС или выбери доступный голос.",
+        );
+      await new Promise<void>((resolve, reject) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = voice;
+        utterance.lang = voice.lang;
+        utterance.rate = options.rate;
+        utterance.pitch =
+          options.character === "rover"
+            ? 1.2
+            : options.character === "merlin"
+              ? 0.8
+              : 1;
+        let settled = false;
+        const finish = (error?: Error) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", abort);
+          utterance.onstart =
+            utterance.onend =
+            utterance.onerror =
+            utterance.onboundary =
+              null;
+          error ? reject(error) : resolve();
+        };
+        const abort = () => {
+          window.speechSynthesis.cancel();
+          finish();
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        utterance.onstart = started;
+        utterance.onboundary = (event) => {
+          if (!signal.aborted && (!event.name || event.name === "word"))
+            boundary?.(event.charIndex, event.charLength);
+        };
+        utterance.onend = () => finish();
+        utterance.onerror = (event) =>
+          finish(
+            ["canceled", "interrupted"].includes(event.error)
+              ? undefined
+              : new Error(
+                  "Ошибка системного голоса. Проверь языковой пакет и настройки.",
+                ),
+          );
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          finish(new Error("Системный голос не удалось запустить."));
+        }
+      });
+      return;
+    }
+    if (options.provider === "local") {
+      const bridge = window.clippyDesktop;
+      if (!bridge?.synthesizeLocalVoice)
+        throw new Error(
+          "Локальный русский голос доступен в portable-приложении.",
+        );
+      const abort = () => {
+        void bridge.stopLocalVoice?.().catch(() => {});
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        const parts = speechChunks(text);
+        const synth = async (part: string) => {
+          const key = JSON.stringify(["local", options.rate, part]);
+          const cached = cache.get(key);
+          if (cached) return cached;
+          const bytes = await bridge.synthesizeLocalVoice!(part, options.rate);
+          if (signal.aborted || !bytes) return null;
+          const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
+          cache.put(key, blob);
+          return blob;
+        };
+        let next = synth(parts[0]);
+        for (let i = 0; i < parts.length; i++) {
+          const blob = await next;
+          if (signal.aborted || !blob) return;
+          next =
+            i + 1 < parts.length ? synth(parts[i + 1]) : Promise.resolve(null);
+          // Attach immediately: prefetch may fail while the previous audio is still playing.
+          const captured = next.then(
+            (value) => ({ value, error: null as unknown }),
+            (error) => ({ value: null, error }),
+          );
+          await playAudio(blob, signal, started, level);
+          const prefetched = await captured;
+          if (prefetched.error) throw prefetched.error;
+          next = Promise.resolve(prefetched.value);
+        }
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+      return;
+    }
+    const key = JSON.stringify([options.voice, options.rate, text]); // Never include API keys.
+    let blob = cache.get(key);
+    if (!blob) {
+      if (cloudRequests >= 30)
+        throw new Error(
+          "Лимит 30 новых TTS-запросов на эту сессию исчерпан. Переключись на системный голос.",
+        );
+      cloudRequests++;
+      const request = new AbortController();
+      const abort = () => request.abort();
+      signal.addEventListener("abort", abort, { once: true });
+      const timeout = setTimeout(() => request.abort("timeout"), 45000);
+      try {
+        blob = await fetchVoiceAudio(text, options, request.signal);
+        if (!signal.aborted) cache.put(key, blob);
+      } catch (error) {
+        if (request.signal.reason === "timeout")
+          throw new Error("OpenAI TTS не ответил за 45 секунд.");
+        if (error instanceof TypeError)
+          throw new Error(
+            "Нет связи с OpenAI TTS. Проверь доступность сервиса.",
+          );
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        signal.removeEventListener("abort", abort);
+      }
+    }
+    await playAudio(blob, signal, started, level);
+  };
+}
+async function playAudio(
+  blob: Blob,
+  signal: AbortSignal,
+  started: () => void,
+  level?: (value: number | null) => void,
+) {
+  if (signal.aborted) return;
+  let envelope: number[] | null = null;
+  if (blob.type === "audio/wav" && blob.size <= 16 * 1024 * 1024) {
+    try {
+      envelope = waveEnvelope(await blob.arrayBuffer());
+    } catch {
+      /* Audio remains playable without motion. */
+    }
+  }
+  if (signal.aborted) return;
+  let sampler: ReturnType<typeof setInterval> | undefined;
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", abort);
+        audio.onplaying = audio.onended = audio.onerror = null;
+        error ? reject(error) : resolve();
+      };
+      const abort = () => {
+        audio.pause();
+        finish();
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      let stalled = false;
+      audio.onwaiting = audio.onstalled = () => {
+        stalled = true;
+        level?.(0);
+      };
+      audio.onplaying = () => {
+        stalled = false;
+        started();
+        clearInterval(sampler);
+        const sample = () =>
+          level?.(
+            stalled || audio.paused || audio.ended
+              ? 0
+              : envelopeAt(envelope, audio.currentTime),
+          );
+        sample();
+        sampler = setInterval(sample, 50);
+      };
+      audio.onended = () => finish();
+      audio.onerror = () =>
+        finish(new Error("Не удалось воспроизвести аудио."));
+      audio
+        .play()
+        .catch(() =>
+          finish(
+            new Error(
+              "Браузер заблокировал воспроизведение. Нажми кнопку озвучки ещё раз.",
+            ),
+          ),
+        );
+    });
+  } finally {
+    clearInterval(sampler);
+    level?.(null);
+    audio.onwaiting = audio.onstalled = null;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    URL.revokeObjectURL(url);
+  }
+}

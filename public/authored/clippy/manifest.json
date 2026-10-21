@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "kind": "AI-generated reference-based drawings, not original Agent frames",
+  "character": "clippy",
+  "files": {
+    "bat-strike.png": "666a6a648ae905401bcfad265f27e3099e1289fe7c223e07f1ad43f6f34ddc4b",
+    "bat-windup.png": "8b4f707b33faee131c8b7fa09dc12e802120d1aefa4289d22e5a4c0e0fffa0aa",
+    "curious.png": "53d9396daec509df5c238c5b250abd351fbee3b995657260cb087f83693e86f2",
+    "impact-left.png": "1410f9ce49ec5a49dd43affe8400d863bbd542741ab927acc6e7da58889e3bb6",
+    "impact-right.png": "3da412ffd2895e3046344481420cb3668c8f83486e432044f0d2ee23d54b7682",
+    "neutral.png": "1a4b1e1c4636341ab2d2638e581019c1ce45dd6edd02cf1489cbe703ed833e1d",
+    "windows-armed.png": "b930adce58fe780446cb1688c384524aca1748a7c84ac18d885c02944950c3f4",
+    "windows-punchline.png": "fd8d979b799c1c22c953afd6c49b3c90a911b3b34c4f2275ccbcfad370cb1954"
+  },
+  "rendering": "New drawings with procedural local deformation and velocity-driven spring physics. Not individually redrawn in-between frames. Vertical collisions currently squash the neutral drawing.",
+  "scenes": "New generated key poses, timed pose transitions, local bending and canvas-only comic effects. No system actions."
+}

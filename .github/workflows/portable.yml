@@ -1,0 +1,173 @@
+name: Windows portable
+on:
+  push:
+    branches: [arena/f226a31f-clippyxam]
+    paths-ignore: ["**/*.md"]
+  workflow_dispatch:
+concurrency:
+  group: windows-portable-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  portable:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npx playwright install chromium
+      - name: Run browser tests
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          npm run test:e2e -- --workers=2 2>&1 | Tee-Object -FilePath release/e2e.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/e2e.log -Tail 100) -join "%0A")
+            Write-Output "::error title=Browser e2e failure::$detail"
+            exit 1
+          }
+      - run: npm run portable:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Test real Russian offline speech
+        timeout-minutes: 7
+        shell: pwsh
+        run: |
+          node scripts/smoke-voice.mjs 2>&1 | Tee-Object -FilePath release/voice-smoke.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/voice-smoke.log -Tail 40) -join "%0A")
+            Write-Output "::error title=Russian voice smoke::$detail"
+            exit 1
+          }
+      - name: Checksums and instructions
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release/*-portable.exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content -Encoding ascii "release/$($exe.Name).sha256"
+          Copy-Item PORTABLE-RU.md release/
+          Copy-Item THIRD_PARTY_NOTICES.md release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clippyXam-windows-x64-portable
+          path: |
+            release/*-portable.exe
+            release/*.sha256
+            release/PORTABLE-RU.md
+            release/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 30
+      - name: Packaged application smoke
+        timeout-minutes: 4
+        env:
+          DEBUG: pw:browser
+        shell: pwsh
+        run: |
+          npm run test:packaged 2>&1 | Tee-Object -FilePath release/smoke.log
+          if ($LASTEXITCODE -ne 0) {
+            $detail = ((Get-Content release/smoke.log -Tail 60) -join "%0A")
+            Write-Output "::error title=Packaged smoke::$detail"
+            exit 1
+          }
+      - name: Check portable launcher
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem release/*-portable.exe).FullName
+          $p = Start-Process $exe -ArgumentList '--remote-debugging-port=9333','--remote-debugging-address=127.0.0.1' -PassThru
+          try {
+            node scripts/smoke-portable.mjs 2>&1 | Tee-Object -FilePath release/portable-smoke.log
+            if ($LASTEXITCODE -ne 0) {
+              $detail = ((Get-Content release/portable-smoke.log -Tail 60) -join "%0A")
+              Write-Output "::error title=Portable smoke::$detail"
+              throw 'Portable launch smoke failed'
+            }
+            if (-not $p.WaitForExit(30000)) { throw 'Portable launcher did not exit' }
+            if ($p.ExitCode -ne 0) { throw "Portable exit code: $($p.ExitCode)" }
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
+      - name: Publish portable testing prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = 'v0.10.2-portable'
+          $exe = (Get-ChildItem release/*-portable.exe).FullName
+          $sha = (Get-ChildItem release/*.exe.sha256).FullName
+          $digest = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $notes = @"
+          ## Portable для Windows 10/11 x64 — без установщика
+
+          В 0.10.2 добавлена поддержка Groq и TeamoRouter. OpenRouter `openrouter/free` остаётся стандартным маршрутом с нулевой ценой и без платного fallback. Groq — только при явном подтверждении и использовании Free tier: приложение не может проверить план или доступ каждой модели; на Developer tier ключ может тарифицироваться. TeamoRouter — отдельный pay-as-you-go провайдер и требует отдельного подтверждения; слово Free в имени модели не означает нулевую стоимость. Между роутерами нет автоматического fallback. Ключи хранятся раздельно.
+
+          CI не выполняет генерацию ответов с пользовательскими ключами и не гарантирует исправление всех сбоев отправки. Если сообщение исчезает без ответа, скопируйте Настройки → Подключение → «Диагностика подключения и голоса».
+
+          В 0.10.1 исправлено мгновенное завершение при краткой занятости native transport: чат ждёт слот и кратко повторяет `BUSY` с отменяемой задержкой.
+          Скачайте **clippyXam-0.10.2-win-x64-portable.exe** ниже, в разделе Assets. Node.js и npm не нужны. Автоматические Source code ZIP/TAR — не приложение.
+
+          В 0.10 две новые сценки Скрепки: бутафорская кнопка «сноса винды» и ударное тестирование игрушечной битой с короткими нарисованными трещинами внутри сцены. Четыре новых рисунка, смена ключевых поз и локальная деформация, не готовые Agent-кадры и не полная покадровая перерисовка. Сценки не запускают shell, удаление файлов или системные операции.
+
+          Напишите «пошути про снос винды» или «покажи сценку с битой»: сценка и реплика работают локально без запроса к модели, после обычного подключения приложения. Также доступны Настройки → Поведение → Новая анимация. Первый автоматический прикол возможен после третьего подходящего короткого ответа; далее не чаще раза в три минуты и пяти успешных ответов. Четыре варианта про Windows и три про биту чередуются. Полезный ответ сохраняется полностью; ошибки API не становятся поводом для шуток. Мягкий режим и запрет грубых реакций отключают эти сценки; «не шути»/«без угроз» переключает мягкий режим. Фоновые реплики выключают автоматические вставки, но не явный запрос сценки.
+
+          Сценки передаются пассивному виджету с временем начала: старые не перезапускаются после открытия. Консервативный hit-map действует только во время движения, затем возвращается альфа-маска. Reduced motion оставляет реплику без движения. Новые рисунки пока только у Скрепки; Rover/Merlin не подменены.
+
+          В 0.9.1 наклон усилен уже при небольшом ускорении относительно плавного движения. Сила перемещения тела и тряска печати не увеличены: заметный изгиб не должен превращаться в удар. Просмотр средней скорости замедлен, а native smoke проверяет реальное движение примерно 240 DIP/s вместо 500 DIP/s.
+
+          Новая Скрепка включена по умолчанию: собственные рисунки спокойной позы, любопытства и двух направлений удара, без использования готовых Agent-кадров в этом режиме. Инерция связана с изменением скорости настоящего окна: плавное движение даёт слабую реакцию, средняя скорость — заметный изгиб тела, сильный рывок — удар о край с короткой паузой и отскоком. При остановке качает вперёд. Тряска печати остаётся слабой и отдельной. Механика работает в основном окне и пассивном виджете; reduced motion выключает её.
+
+          Новые рисунки анимируются локальной деформацией, не вращением всей картинки. Это не полностью покадровая перерисовка каждого промежуточного состояния. Новые вертикальные ударные позы и полноценные авторские наборы Rover/Merlin ещё не готовы; эти два персонажа остаются в исходном режиме. В настройках поведения можно отключить «Новая Скрепка: инерция и удары» для возврата прежнего режима. Стиль новой рисовки предварительный.
+
+          Перед публикацией проверяются реальные BrowserWindow.setPosition → ограниченные относительные скорости через IPC → видимый наклон/удар нового canvas, а также передача движения в виджет. Координаты экрана/курсора не передаются. Resize/maximize/переносы между мониторами сбрасывают импульсы. Во время инерции click-through использует безопасную область, в покое — альфа-маску.
+
+          Сохранены исправления 0.8: openrouter/free первый, без Liquid и платного fallback; длинные ответы с прокруткой; диагностика отдельно от реплик; черновики; autosave; постоянный Piper с короткими фрагментами и prefetch. Старые релизы и clippyXam-data не удаляются.
+
+          Courtney/Earl и оригинальные грубые кадры не подменялись заглушками — проверенных ресурсов пока нет. Цифровой подписи также нет. Не весь первоначальный план завершён; статус и ограничения записаны в ROADMAP.
+
+          Исправлен сетевой транспорт portable: чат и список моделей идут через основной процесс Electron, а не renderer с clippyxam:// origin. Фиксированные HTTPS-адреса OpenRouter, системный proxy/TLS, без отключения CORS/проверки сертификатов. При DNS/TLS/прокси/обрыве в диагностике настроек показывается безопасный код, а не бесполезный перебор четырёх моделей. Бесплатные модели, переключение при отказе провайдера/таймауте, нулевые цены и сохранение черновика остаются.
+
+          Перед публикацией обязательны настоящий запрос публичного каталога (HTTP 200) и авторизационная проба с заведомо неверным тестовым ключом (HTTP 401) из packaged EXE через IPC. Это проверяет реальную сеть, но НЕ генерацию с пользовательским ключом. Ключей/текстов пользователя в проверках нет. Точную причину сбоя на его компьютере по прежней общей ошибке определить нельзя. Скорость и доступность бесплатных моделей не гарантированы.
+
+          Встроенная русская озвучка Piper/Denis включена по умолчанию: автоматически скачивает 63 МБ с Hugging Face при первом запуске, далее работает локально без голосов Windows/ключей/платных API. Для первого скачивания нужен интернет. Голос сохраняется в clippyXam-data/voices. Возможен повтор загрузки в настройках. Это озвучка ответа, а не распознавание микрофона.
+
+          Рядом с exe создаётся clippyXam-data. Ключ OpenRouter сохраняется зашифрованным через Windows DPAPI и загружается при следующем запуске. При переносе на другой компьютер потребуется повторный ввод. Бесплатные модели имеют лимиты; платного fallback нет. OpenAI TTS — отдельная явно платная опция.
+
+          **Без цифровой подписи:** возможны предупреждения SmartScreen. Не отключайте защиту вслепую. Для микрофона нужен совместимый ru-RU System.Speech recognizer; запасной путь — поле ввода и Win+H. Реальный микрофон/голоса, GPU/DPI и многомониторность на машине пользователя ещё требуют проверки.
+
+          Сборка для ручного тестирования, не стабильный релиз. На Windows runner прошли проверки типов, логики и контроллеров, а также настоящий синтез русского WAV движком Piper; exe собран. Запуск packaged/portable, сетевой путь к OpenRouter (каталог/401, без генерации) и русский синтез проверены до публикации. Генерация с пользовательским ключом, реальный микрофон и прослушивание на устройстве пользователя не тестировались. Возможны ошибки интерфейса и виджета.
+
+          SHA-256: $digest
+          Commit: ${{ github.sha }}
+          Build: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          "@
+          $notes | Set-Content -Encoding utf8 release/release-notes.md
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists; refusing to overwrite published binaries' }
+          gh release create $tag $exe $sha release/PORTABLE-RU.md release/THIRD_PARTY_NOTICES.md --target ${{ github.sha }} --title 'clippyXam 0.10.2 — Windows x64 Portable' --notes-file release/release-notes.md --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publishing failed' }
+      - name: Report smoke failure diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path release/smoke.log) {
+            $detail = ((Get-Content release/smoke.log -Tail 100) -join "%0A")
+            Write-Output "::error title=Smoke diagnostic log::$detail"
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke-diagnostics
+          path: |
+            release/*.png
+            release/*smoke.log
+            release/e2e.log
+            release/russian-voice-test.wav
+            test-results/
+          if-no-files-found: ignore

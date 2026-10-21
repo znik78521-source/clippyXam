@@ -1,0 +1,877 @@
+import { useEffect, useState, useRef } from "react";
+import { Cable, Eye, EyeOff, Info, ShieldCheck, Volume2 } from "lucide-react";
+import Dialog from "./Dialog";
+import { authoredActions, authoredLabels } from "../lib/authored-clippy";
+import { originalActions } from "../lib/original-animations";
+import { characters } from "../lib/characters";
+import type { useFreeModels } from "../lib/useFreeModels";
+import { DEFAULT_MODEL } from "../lib/chat";
+import type { CharacterId, Intensity } from "../lib/characters";
+import type { CompanionPreferences } from "../lib/preferences";
+import { ROUTERS, ROUTER_MODELS, routerModelAllowed, type RouterId } from "../lib/routers";
+export interface SettingsData {
+  character: CharacterId;
+  router: RouterId;
+  teamorouterPaidAcknowledged: boolean;
+  groqFreeTierAcknowledged: boolean;
+  intensity: Intensity;
+  sound: boolean;
+  widget: boolean;
+  clickThrough: boolean;
+  speechMotion: boolean;
+  authoredClippy: boolean;
+  key: string;
+  model: string;
+  autoFallback: boolean;
+  voice: string;
+  rate: number;
+  ttsProvider: "system" | "openai" | "local";
+  ttsKey: string;
+  systemVoices: Record<CharacterId, string>;
+  cloudVoices: Record<CharacterId, string>;
+  companion: CompanionPreferences;
+}
+export default function Settings({
+  settings,
+  voices,
+  onSave,
+  onClose,
+  modelCatalog,
+  localVoiceState,
+  routerKeys,
+  onPreview,
+  diagnostic,
+}: {
+  settings: SettingsData;
+  modelCatalog: ReturnType<typeof useFreeModels>;
+  voices: SpeechSynthesisVoice[];
+  localVoiceState?: import("../lib/desktop").LocalVoiceState | null;
+  routerKeys: Record<RouterId, string>;
+  onPreview?: (name: string) => void;
+  diagnostic?: string;
+  onSave: (data: SettingsData) => void | Promise<void>;
+  onClose: () => void;
+}) {
+  const [preview, setPreview] = useState("");
+  const [draft, setDraft] = useState(settings);
+  const [tab, setTab] = useState<"connection" | "voice" | "behavior">(
+    "connection",
+  );
+  const [showKey, setShowKey] = useState(false);
+  const [validation, setValidation] = useState("");
+  const [startup, setStartup] = useState({ available: false, enabled: false });
+  const [saving, setSaving] = useState(false),
+    [saved, setSaved] = useState(true);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const routeModels =
+    draft.router === "openrouter"
+      ? modelCatalog.models
+      : ROUTER_MODELS[draft.router];
+  const routeKeyInfo = {
+    openrouter: { placeholder: "sk-or-v1-…", name: "OpenRouter", url: "https://openrouter.ai/keys" },
+    groq: { placeholder: "gsk_…", name: "Groq", url: "https://console.groq.com/keys" },
+    teamorouter: { placeholder: "tr-…", name: "TeamoRouter", url: "https://teamorouter.com/dashboard?tab=api-keys" },
+  }[draft.router];
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
+  const lastSaved = useRef(JSON.stringify(settings)),
+    chain = useRef(Promise.resolve(true)),
+    active = useRef(true);
+  async function flush() {
+    const value = draftRef.current,
+      stamp = JSON.stringify(value);
+    const task = chain.current.then(async () => {
+      if (stamp === lastSaved.current) return true;
+      if (
+        !routerModelAllowed(value.router, value.model.trim()) ||
+        (value.router === "teamorouter" && !value.teamorouterPaidAcknowledged) ||
+        (value.router === "groq" && !value.groqFreeTierAcknowledged) ||
+        (value.ttsProvider === "openai" && !value.ttsKey.trim())
+      ) {
+        if (active.current)
+          setValidation(
+            value.router === "teamorouter"
+              ? "TeamoRouter тарифицируется: прочитай предупреждение и явно подтверди использование."
+              : value.router === "groq"
+                ? "Для Groq подтверди, что аккаунт останется на бесплатном Free tier."
+                : "Укажи бесплатную модель и, для платного TTS, отдельный ключ.",
+          );
+        return false;
+      }
+      if (active.current) {
+        setSaving(true);
+        setValidation("");
+      }
+      try {
+        await saveRef.current({
+          ...value,
+          key: value.key.trim(),
+          ttsKey: value.ttsKey.trim(),
+          model: value.model.trim(),
+        });
+        lastSaved.current = stamp;
+        if (active.current)
+          setSaved(stamp === JSON.stringify(draftRef.current));
+        return true;
+      } catch {
+        if (active.current)
+          setValidation(
+            "Не удалось сохранить. Проверь доступ к папке приложения.",
+          );
+        return false;
+      } finally {
+        if (active.current) setSaving(false);
+      }
+    });
+    chain.current = task;
+    return task;
+  }
+  const closing = useRef(false),
+    previewRef = useRef(preview);
+  previewRef.current = preview;
+  async function close(showPreview = false) {
+    if (closing.current) return;
+    closing.current = true;
+    try {
+      while (active.current) {
+        const stamp = JSON.stringify(draftRef.current);
+        if (!(await flush())) return;
+        // A slow disk must not lose an edit made after X/Escape was pressed.
+        if (stamp !== JSON.stringify(draftRef.current)) continue;
+        if (showPreview) {
+          const actions =
+            draftRef.current.character === "clippy" &&
+            draftRef.current.authoredClippy
+              ? authoredActions
+              : originalActions[draftRef.current.character];
+          onPreview?.(
+            actions.includes(previewRef.current)
+              ? previewRef.current
+              : actions[0],
+          );
+        } else onClose();
+        return;
+      }
+    } finally {
+      closing.current = false;
+    }
+  }
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (JSON.stringify(draft) === lastSaved.current) return;
+    setSaved(false);
+    const timer = setTimeout(() => void flush(), 400);
+    return () => clearTimeout(timer);
+  }, [draft]);
+  useEffect(() => {
+    let live = true;
+    void window.clippyDesktop
+      ?.getStartup?.()
+      .then((value) => {
+        if (live) setStartup(value);
+      })
+      .catch(() => {
+        if (live) setValidation("Не удалось прочитать автозапуск.");
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  async function changeStartup(enabled: boolean) {
+    setSaving(true);
+    try {
+      const result = await window.clippyDesktop?.setStartup?.(enabled);
+      if (result) setStartup(result);
+    } catch {
+      setValidation("Windows не сохранила автозапуск.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Dialog title="Свойства: clippyXam" onClose={() => void close()} wide>
+      <div className="settings-save-status" role="status">
+        {saving
+          ? "Сохраняю…"
+          : saved
+            ? "Изменения сохраняются автоматически"
+            : "Есть изменения…"}
+      </div>
+      <div className="dialog-heading">
+        <div className="dialog-icon">
+          <Cable size={28} />
+        </div>
+        <div>
+          <h2>
+            {tab === "connection"
+              ? "Добавим ему мозги."
+              : tab === "voice"
+                ? "Дадим ему голос."
+                : "Настроим характер."}
+          </h2>
+          <p>
+            {tab === "connection"
+              ? "Один ключ. Много непрошеных советов."
+              : tab === "voice"
+                ? "Разные тембры. Всё тот же характер."
+                : "Ты решаешь, где заканчиваются шутки."}
+          </p>
+        </div>
+      </div>
+      <form onSubmit={(event) => event.preventDefault()}>
+        <div
+          className="settings-tabs"
+          role="tablist"
+          aria-label="Раздел настроек"
+        >
+          {(
+            [
+              ["connection", "Подключение"],
+              ["voice", "Голос"],
+              ["behavior", "Поведение"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`settings-tab-${id}`}
+              aria-controls={`settings-panel-${id}`}
+              aria-selected={tab === id}
+              tabIndex={tab === id ? 0 : -1}
+              onKeyDown={(event) => {
+                const ids = ["connection", "voice", "behavior"] as const;
+                const current = ids.indexOf(id);
+                const next =
+                  event.key === "ArrowRight"
+                    ? (current + 1) % 3
+                    : event.key === "ArrowLeft"
+                      ? (current + 2) % 3
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? 2
+                          : -1;
+                if (next >= 0) {
+                  event.preventDefault();
+                  setTab(ids[next]);
+                  document.getElementById(`settings-tab-${ids[next]}`)?.focus();
+                }
+              }}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <fieldset
+          id="settings-panel-connection"
+          role="tabpanel"
+          aria-labelledby="settings-tab-connection"
+          hidden={tab !== "connection"}
+        >
+          <legend>Подключение</legend>
+          {diagnostic && (
+            <details className="connection-diagnostic">
+              <summary>Диагностика подключения и голоса</summary>
+              <pre>{diagnostic}</pre>
+            </details>
+          )}
+          <label className="field-label" htmlFor="character">
+            Персонаж
+          </label>
+          <select
+            id="character"
+            value={draft.character}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                character: event.target.value as CharacterId,
+              })
+            }
+          >
+            {characters.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+            <option disabled>Courtney — нет ресурсов</option>
+            <option disabled>Earl — нет ресурсов</option>
+          </select>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.widget}
+              onChange={(event) =>
+                setDraft({ ...draft, widget: event.target.checked })
+              }
+            />
+            Виджет на рабочем столе
+          </label>
+          <p className="field-help">
+            Без фона окна, со стилизованными кнопками закрытия и сворачивания. В
+            браузере — только предпросмотр внутри страницы.
+          </p>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.clickThrough}
+              disabled={!window.clippyDesktop}
+              onChange={(event) =>
+                setDraft({ ...draft, clickThrough: event.target.checked })
+              }
+            />
+            Пропускать клики через прозрачные участки виджета
+          </label>
+          <p className="field-help">
+            Только Windows-виджет. Рамка, ввод и кнопки остаются доступны; при
+            сбое пропуск отключается. Вернуть окно можно через трей. Во время
+            сценок и выглядывания область персонажа защищена целиком.
+          </p>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={startup.enabled}
+              disabled={!startup.available || saving}
+              onChange={(event) => void changeStartup(event.target.checked)}
+            />
+            Запускать при входе в Windows
+          </label>
+          <p className="field-help">
+            По умолчанию выключено. Только portable EXE, без прав
+            администратора. После перемещения файла выключи и снова включи
+            автозапуск из новой папки. Удаляя приложение, сначала выключи его
+            здесь.
+          </p>
+          <label className="field-label" htmlFor="router">
+            AI-роутер
+          </label>
+          <select
+            id="router"
+            value={draft.router}
+            onChange={(event) => {
+              const router = event.target.value as RouterId;
+              const model = router === "openrouter" ? DEFAULT_MODEL : ROUTER_MODELS[router][0].id;
+              setDraft({
+                ...draft,
+                router,
+                key: routerKeys[router] || "",
+                model,
+                autoFallback: router === "openrouter" && draft.autoFallback,
+              });
+            }}
+          >
+            {ROUTERS.map((router) => (
+              <option key={router.id} value={router.id}>{router.name}</option>
+            ))}
+          </select>
+          {draft.router === "teamorouter" && (
+            <>
+              <p className="field-help" role="alert">
+                TeamoRouter — pay-as-you-go, не бесплатный провайдер. Модель с
+                «Free» в названии тоже может тарифицироваться; проверь актуальный
+                тариф перед использованием. Автопереключения на него нет.
+              </p>
+              <label className="behavior-option">
+                <input
+                  type="checkbox"
+                  checked={draft.teamorouterPaidAcknowledged}
+                  onChange={(event) => setDraft({ ...draft, teamorouterPaidAcknowledged: event.target.checked })}
+                />
+                Понимаю, что запросы TeamoRouter могут списывать средства
+              </label>
+              <p className="field-help">
+                Документация и тарифы: <a href="https://teamorouter.com/pricing" target="_blank" rel="noreferrer">teamorouter.com ↗</a>. Запросы не повторяются в других роутерах.
+              </p>
+            </>
+          )}
+          {draft.router === "groq" && (
+            <>
+              <p className="field-help">
+                Используй только аккаунт Groq на Free tier. Если перевести его
+                на платный Developer tier, тот же API-ключ может тарифицироваться;
+                приложение не умеет определять тариф аккаунта и не гарантирует,
+                что каждая модель разрешена на каждом Free-аккаунте. Проверь
+                доступность в <a href="https://console.groq.com/docs/models" target="_blank" rel="noreferrer">каталоге моделей Groq ↗</a>; автоматического перехода на другую модель/роутер нет.
+              </p>
+              <label className="behavior-option">
+                <input
+                  type="checkbox"
+                  checked={draft.groqFreeTierAcknowledged}
+                  onChange={(event) => setDraft({ ...draft, groqFreeTierAcknowledged: event.target.checked })}
+                />
+                Подтверждаю, что использую бесплатный Free tier Groq
+              </label>
+            </>
+          )}
+          <label className="field-label" htmlFor="api-key">
+            API-ключ {routeKeyInfo.name}
+          </label>
+          <div className="password-field">
+            <input
+              id="api-key"
+              type={showKey ? "text" : "password"}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={routeKeyInfo.placeholder}
+              value={draft.key}
+              onChange={(event) => setDraft({ ...draft, key: event.target.value })}
+            />
+            <button type="button" aria-label={showKey ? "Скрыть ключ" : "Показать ключ"} onClick={() => setShowKey(!showKey)}>
+              {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          <div className="field-help">
+            Создать ключ: <a href={routeKeyInfo.url} target="_blank" rel="noreferrer">{routeKeyInfo.name} ↗</a>
+          </div>
+          <button type="button" onClick={() => setDraft({ ...draft, key: "" })}>
+            Удалить сохранённый ключ {routeKeyInfo.name}
+          </button>
+          <p className="field-help">
+            В Windows ключи каждого роутера сохраняются отдельно и шифруются
+            DPAPI. При переносе portable на другой компьютер ключ может
+            потребовать повторного ввода.
+          </p>
+          <label className="field-label" htmlFor="model">
+            Модель {draft.router === "teamorouter" ? "(тарификация по тарифу)" : ""}
+          </label>
+          <select id="model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>
+            {draft.router === "openrouter" && <option value={DEFAULT_MODEL}>OpenRouter Free — стандартный бесплатный маршрут</option>}
+            {draft.router === "openrouter" && !modelCatalog.models.some((m) => m.id === draft.model) && draft.model !== DEFAULT_MODEL && <option value={draft.model}>{draft.model} — нет в текущем каталоге</option>}
+            {draft.router === "openrouter" ? (
+              <>
+                <optgroup label="Компактные — приоритет скорости">
+                  {routeModels.filter((m) => m.group === "fast" ).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </optgroup>
+                <optgroup label="Другие бесплатные — резерв">
+                  {routeModels.filter((m) => m.group === "reserve").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </optgroup>
+              </>
+            ) : (
+              <optgroup label={draft.router === "groq" ? "Модели Groq (проверь Free tier)" : "Модели TeamoRouter (могут быть платными)"}>
+                {routeModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+          {draft.router === "openrouter" ? (
+            <>
+              <button type="button" disabled={modelCatalog.loading} onClick={() => void modelCatalog.refresh()}>
+                {modelCatalog.loading ? "Обновляю список…" : "Обновить список моделей OpenRouter"}
+              </button>
+              <p className="field-help" role="status">
+                {modelCatalog.error || (modelCatalog.live ? `Бесплатных текстовых моделей в каталоге: ${modelCatalog.models.length}.` : "Встроенный список до обновления каталога.")}{" "}
+                Компактность — ориентир, не замер скорости. Доступность и очереди меняются.
+              </p>
+              <label className="behavior-option">
+                <input type="checkbox" checked={draft.autoFallback} onChange={(event) => setDraft({ ...draft, autoFallback: event.target.checked })} />
+                Если не отвечает — пробовать другую бесплатную модель OpenRouter
+              </label>
+              <p className="field-help">
+                До четырёх нулевых по цене моделей OpenRouter. Никакой другой
+                роутер не используется автоматически; ключи и платные маршруты
+                между провайдерами не переключаются.
+              </p>
+            </>
+          ) : (
+            <p className="field-help">
+              Автопереключение отключено: запрос останется только у выбранного
+              провайдера. При отказе или лимите исходный текст сохраняется.
+            </p>
+          )}
+        </fieldset>
+        <fieldset
+          id="settings-panel-voice"
+          role="tabpanel"
+          aria-labelledby="settings-tab-voice"
+          hidden={tab !== "voice"}
+        >
+          <legend>
+            <Volume2 size={13} /> Озвучка
+          </legend>
+          <label className="behavior-option">
+            <input
+              type="checkbox"
+              checked={draft.sound}
+              onChange={(event) =>
+                setDraft({ ...draft, sound: event.target.checked })
+              }
+            />
+            Озвучивать ответы
+          </label>
+          <p className="field-help">
+            Голосовой ввод: кнопка микрофона в главном окне. В Windows нужен
+            совместимый ru-RU распознаватель System.Speech; обычного языкового
+            пакета может быть недостаточно. В браузере распознавание может
+            использовать сервис его поставщика. Текст сначала попадает в поле, а
+            не отправляется сразу.
+          </p>
+          <label className="field-label" htmlFor="tts-provider">
+            Провайдер голоса
+          </label>
+          <select
+            id="tts-provider"
+            value={draft.ttsProvider}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                ttsProvider: event.target.value as SettingsData["ttsProvider"],
+              })
+            }
+          >
+            {window.clippyDesktop?.synthesizeLocalVoice && (
+              <option value="local">
+                Piper Denis — русский, локально и бесплатно
+              </option>
+            )}
+            <option value="system">Системный голос — без API-ключа</option>
+            <option value="openai">OpenAI TTS — платный API</option>
+          </select>
+          {draft.ttsProvider === "openai" && (
+            <>
+              <label className="field-label" htmlFor="tts-key">
+                Отдельный ключ OpenAI TTS
+              </label>
+              <input
+                id="tts-key"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={draft.ttsKey}
+                onChange={(event) =>
+                  setDraft({ ...draft, ttsKey: event.target.value })
+                }
+                placeholder="sk-…"
+              />
+              <div className="info-box voice-cost">
+                После включения динамика текст реплик отправляется OpenAI. Новая
+                реплика — платный запрос; повторные есть в кэше только до
+                закрытия окна/смены настроек. Ключ OpenRouter сюда не подходит.
+                AI-голоса, не оригинальные голоса маскотов. Модель: tts-1. Лимит
+                — 30 новых запросов на эту сессию (ошибки тоже считаются); смена
+                настроек лимит не сбрасывает.
+              </div>
+            </>
+          )}
+          {draft.ttsProvider === "local" && (
+            <p className="field-help">
+              Русский голос скачивается автоматически один раз (63 МБ) с Hugging
+              Face. Далее работает без сети и без голосов Windows. Текст никуда
+              не отправляется. Один голос Denis для всех персонажей.
+              <br />
+              {localVoiceState?.phase === "ready"
+                ? "Голос готов."
+                : localVoiceState?.phase === "downloading"
+                  ? `Загрузка: ${localVoiceState.progress}%`
+                  : localVoiceState?.error || "Подготовка голоса…"}
+              {localVoiceState?.phase === "error" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void window.clippyDesktop
+                      ?.prepareLocalVoice?.()
+                      .catch(() => {})
+                  }
+                >
+                  Повторить загрузку
+                </button>
+              )}
+            </p>
+          )}
+          {draft.ttsProvider !== "local" &&
+            characters.map((character) => (
+              <div key={character.id}>
+                <label
+                  className="field-label"
+                  htmlFor={`voice-${character.id}`}
+                >
+                  {character.name}
+                </label>
+                <select
+                  id={`voice-${character.id}`}
+                  value={
+                    (draft.ttsProvider === "system"
+                      ? draft.systemVoices
+                      : draft.cloudVoices)[character.id]
+                  }
+                  onChange={(event) => {
+                    const field =
+                      draft.ttsProvider === "system"
+                        ? "systemVoices"
+                        : "cloudVoices";
+                    setDraft({
+                      ...draft,
+                      [field]: {
+                        ...draft[field],
+                        [character.id]: event.target.value,
+                      },
+                    });
+                  }}
+                >
+                  {draft.ttsProvider === "system" ? (
+                    <>
+                      <option value="">
+                        Русский голос / общий по умолчанию
+                      </option>
+                      {voices.map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI}>
+                          {voice.name} · {voice.lang}
+                        </option>
+                      ))}
+                    </>
+                  ) : (
+                    ["alloy", "echo", "fable", "onyx", "nova", "shimmer"].map(
+                      (voice) => <option key={voice}>{voice}</option>,
+                    )
+                  )}
+                </select>
+              </div>
+            ))}
+          <div hidden={draft.ttsProvider !== "system"}>
+            <label className="field-label" htmlFor="voice">
+              Общий голос по умолчанию
+            </label>
+            <select
+              id="voice"
+              value={draft.voice}
+              onChange={(event) =>
+                setDraft({ ...draft, voice: event.target.value })
+              }
+            >
+              <option value="">Русский голос автоматически</option>
+              {voices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name} · {voice.lang}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="rate-label" htmlFor="rate">
+            Скорость <span>{draft.rate.toFixed(1)}×</span>
+          </label>
+          <input
+            id="rate"
+            type="range"
+            min="0.7"
+            max="1.8"
+            step="0.05"
+            value={draft.rate}
+            onChange={(event) =>
+              setDraft({ ...draft, rate: Number(event.target.value) })
+            }
+          />
+          <p className="field-help">
+            Голоса зависят от браузера и ОС. Некоторые используют облачный
+            синтез.
+          </p>
+        </fieldset>
+        <fieldset
+          id="settings-panel-behavior"
+          role="tabpanel"
+          aria-labelledby="settings-tab-behavior"
+          hidden={tab !== "behavior"}
+        >
+          <legend>Характер и границы</legend>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.authoredClippy}
+              onChange={(e) => {
+                setPreview("");
+                setDraft({ ...draft, authoredClippy: e.target.checked });
+              }}
+            />
+            Новая Скрепка: инерция и удары
+          </label>
+          <p className="field-help">
+            Новая отрисовка пока для Скрепки: плавное движение, заметный наклон
+            на средней скорости и удар при сильном рывке. Rover и Merlin пока в
+            исходном режиме. Отключение флажка возвращает старую Скрепку.
+          </p>
+          <label className="field-label" htmlFor="original-preview">
+            {draft.character === "clippy" && draft.authoredClippy
+              ? "Новая анимация"
+              : "Оригинальная анимация"}
+          </label>
+          <select
+            id="original-preview"
+            value={
+              preview ||
+              (draft.character === "clippy" && draft.authoredClippy
+                ? authoredActions
+                : originalActions[draft.character])[0]
+            }
+            onChange={(e) => setPreview(e.target.value)}
+          >
+            {(draft.character === "clippy" && draft.authoredClippy
+              ? authoredActions
+              : originalActions[draft.character]
+            ).map((name) => (
+              <option key={name} value={name}>
+                {authoredLabels[name] || name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => void close(true)}>
+            Показать анимацию
+          </button>
+          <label className="field-label" htmlFor="intensity">
+            Характер
+          </label>
+          <select
+            id="intensity"
+            value={draft.intensity}
+            onChange={(event) =>
+              setDraft({ ...draft, intensity: event.target.value as Intensity })
+            }
+          >
+            <option value="soft">Мягко</option>
+            <option value="normal">С характером</option>
+            <option value="wild">Без тормозов</option>
+          </select>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.companion.backgroundQuips}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  companion: {
+                    ...draft.companion,
+                    backgroundQuips: event.target.checked,
+                  },
+                })
+              }
+            />
+            Самостоятельные анимации и выглядывание
+          </label>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.companion.allowRude}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  companion: {
+                    ...draft.companion,
+                    allowRude: event.target.checked,
+                  },
+                })
+              }
+            />
+            Разрешить грубый жест (кроме мягкого режима)
+          </label>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.companion.quietEnabled}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  companion: {
+                    ...draft.companion,
+                    quietEnabled: event.target.checked,
+                  },
+                })
+              }
+            />
+            Тихие часы: без голоса и фоновых реплик
+          </label>
+          <div className="quiet-hours">
+            <label>
+              С{" "}
+              <input
+                aria-label="Начало тихих часов"
+                type="time"
+                value={draft.companion.quietStart}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    companion: {
+                      ...draft.companion,
+                      quietStart: event.target.value,
+                    },
+                  })
+                }
+              />
+            </label>
+            <label>
+              До{" "}
+              <input
+                aria-label="Конец тихих часов"
+                type="time"
+                value={draft.companion.quietEnd}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    companion: {
+                      ...draft.companion,
+                      quietEnd: event.target.value,
+                    },
+                  })
+                }
+              />
+            </label>
+          </div>
+          <p className="field-help">
+            Местное время компьютера. Одинаковые начало и конец — без тихого
+            интервала. На сообщения продолжит отвечать текстом.
+          </p>
+          <label className="setting-check">
+            <input
+              type="checkbox"
+              checked={draft.companion.rememberSession}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  companion: {
+                    ...draft.companion,
+                    rememberSession: event.target.checked,
+                  },
+                })
+              }
+            />
+            Помнить отдельный диалог каждого маскота в этой сессии
+          </label>
+          <p className="field-help">
+            Только оперативная память, до закрытия/перезагрузки. При отключении
+            сохранённые диалоги других маскотов удаляются. «Новый диалог»
+            очищает текущий. Для прекращения подколов напиши «без подколов» или
+            выбери «Мягко».
+          </p>
+        </fieldset>
+        <div className="privacy-note">
+          <ShieldCheck size={19} />
+          <span>
+            Ключ OpenRouter в Windows сохраняется зашифрованным и отправляется
+            только OpenRouter. Ключ OpenAI TTS — только в памяти и отправляется
+            OpenAI (если выбран). Настройки персонажа, модели, голоса и
+            поведения сохраняются отдельно без ключей и переписки. Виджет
+            открывается вручную; платный TTS после перезапуска не включается.
+            История и кэш аудио не сохраняются после перезагрузки.
+          </span>
+        </div>
+        {validation && (
+          <p className="error-text" role="alert">
+            <Info size={14} />
+            {validation}
+          </p>
+        )}
+        <div className="dialog-buttons">
+          <button
+            className="nt-button"
+            type="button"
+            onClick={() => void close()}
+          >
+            Готово
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}

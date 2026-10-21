@@ -1,0 +1,714 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 0;
+  min-height: 100%;
+  font-family: Tahoma, "MS Sans Serif", Arial, sans-serif;
+  font-size: 12px;
+  color: #171717;
+}
+body {
+  background: #7e8e90;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  color: #777;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 1px dotted #111;
+  outline-offset: -4px;
+}
+button,
+.nt-button {
+  border: 2px solid;
+  border-color: #fff #404040 #404040 #fff;
+  background: #c0c0c0;
+  color: #111;
+  border-radius: 0;
+  box-shadow:
+    inset -1px -1px #808080,
+    inset 1px 1px #dfdfdf;
+  padding: 5px 10px;
+}
+button:active:not(:disabled) {
+  border-color: #404040 #fff #fff #404040;
+  box-shadow: inset 1px 1px #808080;
+}
+input,
+select,
+textarea {
+  border: 2px solid;
+  border-color: #808080 #fff #fff #808080;
+  border-radius: 0;
+  background: #fff;
+  padding: 6px;
+  min-width: 0;
+  color: #111;
+}
+a {
+  color: #000080;
+}
+p {
+  line-height: 1.5;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.nt-desktop {
+  width: 100%;
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  padding: 12px;
+}
+.nt-shell {
+  width: 360px;
+  height: 460px;
+  max-width: 100%;
+  max-height: 100%;
+  position: relative;
+}
+.nt-maximized {
+  width: 100%;
+  height: 100%;
+}
+.nt-companion {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #c0c0c0;
+  padding: 3px;
+  border: 2px solid;
+  border-color: #fff #404040 #404040 #fff;
+  box-shadow: 1px 1px #000;
+}
+.nt-caption {
+  height: 27px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #b0b0b0;
+  border-bottom: 1px solid #808080;
+  padding: 2px 2px 3px 4px;
+  user-select: none;
+}
+.nt-drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: bold;
+  min-width: 0;
+}
+.nt-drag img {
+  width: 15px;
+  height: 15px;
+  filter: grayscale(1);
+}
+.nt-window-native .nt-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.nt-window-buttons {
+  display: flex;
+  gap: 2px;
+}
+.nt-window-buttons button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 21px;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.nt-inactive .nt-caption {
+  color: #666;
+  background: #bcbcbc;
+}
+.nt-stage {
+  position: relative;
+  flex: 1;
+  min-height: 210px;
+  overflow: hidden;
+}
+.nt-balloon {
+  position: absolute;
+  top: 17px;
+  left: 12px;
+  right: 12px;
+  padding: 11px 15px;
+  background: #ffffe1;
+  border: 1px solid #555;
+  border-radius: 3px;
+  z-index: 2;
+  line-height: 1.55;
+  font-size: 12px;
+  text-align: center;
+  white-space: pre-line;
+}
+.nt-balloon > span {
+  display: block;
+  max-height: 92px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+.nt-balloon:after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: #ffffe1;
+  border-bottom: 1px solid #555;
+  border-right: 1px solid #555;
+  position: absolute;
+  bottom: -6px;
+  left: 52%;
+  transform: rotate(45deg);
+}
+.nt-actor {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 224px;
+  height: 200px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition:
+    left 0.65s,
+    opacity 0.5s,
+    transform 0.65s;
+}
+.phase-away .nt-actor {
+  left: 160%;
+  opacity: 0;
+}
+.phase-peeking .nt-actor,
+.phase-rude[data-away="true"] .nt-actor {
+  left: 100%;
+  transform: translateX(-15%);
+}
+.peek-actor {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  width: 224px;
+  height: 200px;
+}
+.peek-active {
+  transform-origin: 85% 85%;
+  animation: peek-from-edge 3.8s ease-in-out both;
+}
+.peek-active .mascot-sprite {
+  clip-path: inset(0 25% 0 0);
+}
+.peek-active .rude-hand {
+  right: 95px;
+  top: 58px;
+  animation: peek-finger 3.8s both;
+}
+@keyframes peek-from-edge {
+  0%,
+  100% {
+    transform: translateX(90px) rotate(0);
+    opacity: 0;
+  }
+  15% {
+    transform: translateX(-52px) rotate(-18deg);
+    opacity: 1;
+  }
+  30% {
+    transform: translateX(-74px) rotate(-24deg);
+  }
+  48% {
+    transform: translateX(-64px) rotate(-16deg);
+  }
+  64% {
+    transform: translateX(-74px) rotate(-23deg);
+  }
+  82% {
+    transform: translateX(-52px) rotate(-18deg);
+    opacity: 1;
+  }
+}
+@keyframes peek-finger {
+  0%,
+  32%,
+  100% {
+    opacity: 0;
+    transform: translate(20px, 35px) rotate(20deg);
+  }
+  45%,
+  72% {
+    opacity: 1;
+    transform: translate(-10px, 0) rotate(-12deg);
+  }
+  84% {
+    opacity: 0;
+    transform: translate(20px, 35px);
+  }
+}
+.phase-offended .nt-actor {
+  transform: translateX(-50%) rotate(5deg);
+}
+.nt-composer {
+  padding: 8px 6px 5px;
+  flex-shrink: 0;
+}
+.nt-composer form {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+.nt-composer input {
+  flex: 1;
+  width: 0;
+  height: 32px;
+}
+.nt-composer form > button {
+  width: 30px;
+  padding: 3px;
+  display: grid;
+  place-items: center;
+}
+.nt-composer button[aria-pressed="true"] {
+  background: #aaa;
+}
+.nt-notice,
+.nt-listening {
+  font-size: 11px;
+  margin: 0 0 6px;
+  max-height: 48px;
+  overflow: auto;
+  color: #802b1b;
+}
+.nt-listening {
+  color: #153c59;
+}
+.nt-text-button {
+  border: 0;
+  box-shadow: none;
+  background: none;
+  text-decoration: underline;
+  padding: 0;
+  color: #000080;
+}
+.nt-stop-speech {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  padding: 1px;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.nt-native {
+  padding: 0;
+  display: block;
+  background: #c0c0c0;
+}
+.nt-native .nt-shell {
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+}
+.nt-widget.nt-companion {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px;
+}
+.nt-widget .nt-caption,
+.nt-widget .nt-composer {
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #fff #555 #555 #fff;
+}
+.nt-widget .nt-composer {
+  padding: 6px;
+}
+.nt-widget-preview .nt-shell {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+}
+.nt-restore {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+}
+html.companion-document,
+.companion-document body,
+.companion-document #root {
+  background: transparent !important;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.companion-document .nt-companion {
+  height: 100dvh;
+}
+/* Settings / first-run panels: classic raised borders, no XP chrome. */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: #0003;
+}
+.dialog {
+  width: 420px;
+  max-width: 100%;
+  max-height: calc(100dvh - 16px);
+  display: flex;
+  flex-direction: column;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #fff #404040 #404040 #fff;
+  padding: 3px;
+  box-shadow: 2px 2px #0006;
+}
+.dialog.wide {
+  width: 470px;
+}
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #adadad;
+  padding: 3px 4px;
+  font-weight: bold;
+  min-height: 27px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #808080;
+}
+.window-control {
+  width: 23px;
+  height: 21px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.dialog-body {
+  overflow: auto;
+  padding: 13px;
+  min-height: 0;
+}
+.dialog-body ol {
+  padding-left: 20px;
+  line-height: 1.6;
+}
+.dialog-body form > input {
+  width: 100%;
+}
+.dialog-heading {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.dialog-icon {
+  display: none;
+}
+.dialog-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.dialog-heading p {
+  margin: 4px 0 0;
+  color: #444;
+  font-size: 11px;
+}
+.field-label {
+  display: block;
+  margin: 12px 0 5px;
+}
+.field-help {
+  font-size: 11px;
+  color: #454545;
+  line-height: 1.5;
+  margin: 6px 0 10px;
+}
+.password-field {
+  display: flex;
+}
+.password-field input {
+  width: 0;
+  flex: 1;
+}
+.password-field button {
+  padding: 3px 7px;
+}
+.settings-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+.settings-tabs button {
+  font-size: 11px;
+}
+.settings-tabs button[aria-selected="true"] {
+  background: #d4d4d4;
+  font-weight: bold;
+}
+fieldset {
+  min-width: 0;
+  padding: 10px;
+  margin: 0;
+  border: 1px solid #808080;
+}
+fieldset[hidden] {
+  display: none;
+}
+fieldset > input,
+fieldset > select {
+  width: 100%;
+}
+legend {
+  font-size: 11px;
+  padding: 0 5px;
+}
+legend svg {
+  vertical-align: middle;
+}
+.behavior-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 12px 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.behavior-option input {
+  flex-shrink: 0;
+  margin: 1px 0;
+  width: 14px;
+  height: 14px;
+}
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 14px;
+}
+.dialog-buttons button {
+  min-width: 76px;
+}
+.privacy-note {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 12px;
+  color: #444;
+}
+.privacy-note svg {
+  flex-shrink: 0;
+}
+.error-text {
+  color: #8c1515;
+  font-size: 11px;
+}
+.voice-grid,
+.quiet-hours {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.voice-row select {
+  flex: 1;
+  width: 0;
+}
+.voice-note {
+  font-size: 11px;
+}
+.range-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.range-row input {
+  flex: 1;
+}
+.spoken-word {
+  background: #f2d477;
+  color: inherit;
+}
+.mascot-sprite {
+  position: relative;
+  flex-shrink: 0;
+  image-rendering: auto;
+}
+.mascot-frame,
+.mascot-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.mascot-loading {
+  font-size: 11px;
+  color: #555;
+}
+.rude-hand {
+  position: absolute;
+  right: 10px;
+  top: 65px;
+  width: 60px;
+  height: 90px;
+  z-index: 4;
+  animation: hand-in 0.25s ease-out;
+}
+.rude-hand[data-character="rover"] {
+  rotate: -9deg;
+}
+.rude-hand[data-character="merlin"] {
+  filter: drop-shadow(0 0 5px #b4a0e887);
+}
+@keyframes hand-in {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (max-height: 430px) {
+  .nt-stage {
+    min-height: 160px;
+  }
+  .nt-actor {
+    bottom: 0;
+    transform: translateX(-50%) scale(0.8);
+    transform-origin: center bottom;
+  }
+  .nt-balloon {
+    top: 8px;
+    padding: 7px;
+  }
+  .nt-balloon > span {
+    max-height: 65px;
+  }
+}
+/* Original sprite artwork, with optional audio-envelope motion, not invented mouth frames. */
+.mascot-canvas {
+  display: block;
+  transform-origin: center bottom;
+  transition: transform 45ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-canvas {
+    transform: none !important;
+    transition: none;
+  }
+}
+/* Original frame animation replaces the old rotated/sliding SVG scenes. */
+.nt-actor,
+.phase-offended .nt-actor,
+.phase-peeking .nt-actor,
+.phase-rude[data-away="true"] .nt-actor {
+  left: 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.2s;
+}
+.phase-away .nt-actor {
+  left: 50%;
+  opacity: 0;
+}
+.mascot-canvas {
+  transition: none;
+}
+.nt-balloon > span {
+  max-height: 130px;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  user-select: text;
+}
+.settings-save-status {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+  padding: 6px 0;
+  font-size: 11px;
+}
+.connection-diagnostic pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.4 monospace;
+}
+@media (max-height: 430px) {
+  .nt-balloon > span {
+    max-height: 95px;
+  }
+}
+
+.nt-composer form button {
+  position: relative;
+}
+.diagnostic-dot {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a65f00;
+}
+.nt-away-note {
+  font-size: 10px;
+  margin-top: 5px;
+  color: #555;
+}
+/* A full movement area for new artwork: collisions touch the window's edges,
+   not the edge of the old 224px sprite box. No flat-image rotation. */
+.nt-stage .nt-actor-authored {left:5px;right:5px;width:auto;bottom:4px;height:calc(100% - 100px);max-height:250px;min-height:140px;transform:none;}
+.authored-clippy {width:100%;height:100%;position:relative;}
+.authored-clippy canvas {width:100%;height:100%;}
+.artwork-error {position:absolute;inset:20px;font-size:11px;color:#666;}

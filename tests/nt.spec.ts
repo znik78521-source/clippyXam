@@ -94,7 +94,7 @@ test("Enter submits exactly once to free route with zero-price limits and no lea
   await expect(page.locator(".nt-balloon")).toContainText("Ответ модели");
   expect(calls).toBe(1);
 });
-test("token removal and 401 force onboarding; dropdown contains only free routes", async ({
+test("token removal and 401 force onboarding; router options are explicit and OpenRouter models stay free", async ({
   page,
 }) => {
   await page.route(endpoint, (route) =>
@@ -102,6 +102,10 @@ test("token removal and 401 force onboarding; dropdown contains only free routes
   );
   await connect(page);
   await settings(page);
+  const routerOptions = await page
+    .locator("#router option")
+    .evaluateAll((nodes) => nodes.map((n) => (n as HTMLOptionElement).value));
+  expect(routerOptions).toEqual(["openrouter", "groq", "teamorouter"]);
   const options = await page
     .locator("#model option")
     .evaluateAll((nodes) => nodes.map((n) => (n as HTMLOptionElement).value));
@@ -109,7 +113,7 @@ test("token removal and 401 force onboarding; dropdown contains only free routes
   expect(
     options.every((id) => id === "openrouter/free" || id.endsWith(":free")),
   ).toBe(true);
-  await page.getByLabel("Бесплатная модель").selectOption("openrouter/free");
+  await page.locator("#model").selectOption("openrouter/free");
   await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Тест");
   await expect(
@@ -612,9 +616,7 @@ test("live model dropdown excludes paid models and selected HTTP400 falls back w
   await expect(
     page.locator('#model option[value="paid/model:free"]'),
   ).toHaveCount(0);
-  await page
-    .getByLabel("Бесплатная модель")
-    .selectOption("test/reserve-70b:free");
+  await page.locator("#model").selectOption("test/reserve-70b:free");
   await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Вопрос для резерва");
   await expect(page.locator(".nt-balloon")).toContainText("Сработал резерв");
@@ -641,9 +643,9 @@ test("fallback can be disabled; catalog failure retains bootstrap choices", asyn
   await expect(
     page.getByText("Не удалось обновить каталог.", { exact: false }),
   ).toBeVisible();
-  await page.getByLabel("Бесплатная модель").selectOption("openrouter/free");
+  await page.locator("#model").selectOption("openrouter/free");
   await page
-    .getByLabel("Если не отвечает — пробовать другую бесплатную модель")
+    .getByLabel("Если не отвечает — пробовать другую бесплатную модель OpenRouter")
     .uncheck();
   await page.getByRole("button", { name: "Готово", exact: true }).click();
   await send(page, "Сохрани черновик");

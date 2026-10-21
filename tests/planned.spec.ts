@@ -61,7 +61,7 @@ test("saved preferences restore without chat/key leakage; startup changes only o
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Настройки", exact: true }).click();
-  await expect(page.getByLabel("Бесплатная модель")).toHaveValue(
+  await expect(page.locator("#model")).toHaveValue(
     "qwen/qwen3-4b:free",
   );
   await expect(
